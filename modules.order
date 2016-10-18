@@ -1,0 +1,3 @@
+kernel//home/my/nsdi17/openwrt/build_dir/target-mips_34kc_musl-1.1.14/linux-ar71xx_nand/compat-wireless-2016-01-10/drivers/net/wireless/ath/ath9k/ath9k.ko
+kernel//home/my/nsdi17/openwrt/build_dir/target-mips_34kc_musl-1.1.14/linux-ar71xx_nand/compat-wireless-2016-01-10/drivers/net/wireless/ath/ath9k/ath9k_hw.ko
+kernel//home/my/nsdi17/openwrt/build_dir/target-mips_34kc_musl-1.1.14/linux-ar71xx_nand/compat-wireless-2016-01-10/drivers/net/wireless/ath/ath9k/ath9k_common.ko
