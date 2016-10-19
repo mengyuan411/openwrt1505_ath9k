@@ -112,7 +112,7 @@ long count_schedule_time(int len)
 {
 	long delay = (len * 8 - dsshaper_my.curr_bucket_contents) / 80;
 	if(delay == 0)
-		delay=1;
+		delay=100;
 	return delay;
 }
 
@@ -164,7 +164,7 @@ void schedule_packet(struct list_head *p,int len)
 {
 	long delay = (len * 8 - dsshaper_my.curr_bucket_contents) / 80; //us
 	if(delay == 0)
-		delay=1;
+		delay=100;
 	ktime_t ktime;
 	ktime = ktime_set( 0,(u64)delay*1000);//100us
 	hrtimer_init(&hr_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL );
@@ -180,12 +180,13 @@ bool shape_packet(struct list_head *packet,struct ath_softc *sc, struct ath_txq 
 {
 	   // schedule_packet(packet,len);
 	//return true;
+	/*
 	if (list_length(&shape_queue) >= dsshaper_my.max_queue_length) {
 			//drop (p);// unsettled how to drop?
 			printk(KERN_DEBUG "[mengy][shape_packet]shape the packet fails over queue length\n");
 			dsshaper_my.dropped_packets++;
 			return false;
-		} 
+		} */
 		//shape_queue.enque(p);
 		struct packet_dsshaper* my_packet;
 		my_packet = kzalloc(sizeof(struct packet_dsshaper),GFP_KERNEL);
@@ -204,10 +205,10 @@ bool shape_packet(struct list_head *packet,struct ath_softc *sc, struct ath_txq 
 		msg->internal = internal;
 		msg->len = len;
 		list_add_tail(&msg->list,&shape_queue_msg);
-		spin_unlock_bh(&lock);
+	//	spin_unlock_bh(&lock);
 
 		dsshaper_my.shaped_packets++;
-		printk(KERN_DEBUG "[mengy][shape_packet]shape the packet success queue length:%ld\n",list_length(&shape_queue));
+		printk(KERN_DEBUG "[mengy][shape_packet]shape the packe shape number:%ld\n",dsshaper_my.shaped_packets);
 		if(schedule_flag ==1)
 			schedule_packet(packet,len);
 	return true;
@@ -245,7 +246,45 @@ void recv(int len, struct ath_softc* sc, struct ath_txq* txq, struct list_head* 
 	}				
 	dsshaper_my.received_packets++;
 	printk(KERN_DEBUG "[mengy][recv]receive packet number :%ld \n",dsshaper_my.received_packets);
-	spin_lock_bh(&lock);
+	//spin_lock_bh(&lock);
+	/* test for the q*/
+	if(dsshaper_my.received_packets >= 501 &&  dsshaper_my.received_packets <= 505)
+	{	
+		shape_packet(p,sc,txq,internal,len,0);	
+	}
+
+		
+	if(dsshaper_my.received_packets == 505)
+	{
+		struct packet_msg *msg_resume;
+        	struct packet_dsshaper *packet_dsshaper_resume;
+        	struct list_head *lh_msg_resume;
+        	struct list_head *lh_p_resume;
+		int free_count = 0;
+        	while (!list_empty(&shape_queue))
+        	{
+
+                	lh_p_resume = shape_queue.next;
+                	lh_msg_resume = shape_queue_msg.next;
+                	msg_resume = list_entry(lh_msg_resume,struct packet_msg,list);
+                	packet_dsshaper_resume = list_entry(lh_p_resume,struct packet_dsshaper,list);
+			free_count++;
+
+                	//if (in_profile(msg_resume->len))
+                //	{
+                        	dsshaper_my.sent_packets++;
+                        	ath_tx_txqaddbuf(msg_resume->sc, msg_resume->txq, packet_dsshaper_resume->packet, msg_resume->internal);
+                        	list_del(lh_p_resume);
+                        	list_del(lh_msg_resume);
+				printk(KERN_DEBUG "[mengy][q test]free count %ld\n",free_count);			
+                        	kfree(msg_resume);
+                        	kfree(packet_dsshaper_resume);	
+			}		
+	
+	}
+	else
+		ath_tx_txqaddbuf(sc, txq, p, internal);
+	return;
 	if (list_empty(&shape_queue)) 
 	{
 //		  There are no packets being shapped. Tests profile.

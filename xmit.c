@@ -2164,10 +2164,10 @@ static void ath_tx_send_normal(struct ath_softc *sc, struct ath_txq *txq,
 	struct timespec tw;
 	getnstimeofday(&tw);
 	skb->tstamp = timespec_to_ktime(tw);
-	printk(KERN_DEBUG "call recv in ath_tx_send_normal");
-	recv(fi->framelen, sc, txq, &bf_head, false);
+	//printk(KERN_DEBUG "call recv in ath_tx_send_normal");
+	//recv(fi->framelen, sc, txq, &bf_head, false);
 	//add end by mengy
-	//ath_tx_txqaddbuf(sc, txq, &bf_head, false); // change for before
+	ath_tx_txqaddbuf(sc, txq, &bf_head, false); // change for before
 	
 	TX_STAT_INC(txq->axq_qnum, queued);
 }
