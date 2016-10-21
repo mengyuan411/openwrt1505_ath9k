@@ -1,4 +1,4 @@
-/*opyright (c) 1999, Federal University of Pernambuco - Brazil.
+/*staopyright (c) 1999, Federal University of Pernambuco - Brazil.
  * All rights reserved.
  *
  * License is granted to copy, to use, and to make and to use derivative
@@ -86,8 +86,8 @@ void update_bucket_contents()
 	struct timespec current_time;
 	getnstimeofday(&current_time);
 	struct timespec tmp_sub = timespec_sub(current_time,dsshaper_my.last_time);
-	printk(KERN_DEBUG "[mengy][update_bucket_contents] before contents %ld\n",dsshaper_my.curr_bucket_contents);
-	printk(KERN_DEBUG "[mengy][update_bucket_contents] time gap  %ld.%ld flow_peak %ld\n",tmp_sub.tv_sec,tmp_sub.tv_nsec,flow_peak);
+	//printk(KERN_EMERG "[mengy][update_bucket_contents] before contents %ld\n",dsshaper_my.curr_bucket_contents);
+	//printk(KERN_EMERG "[mengy][update_bucket_contents] time gap  %ld.%ld flow_peak %ld\n",tmp_sub.tv_sec,tmp_sub.tv_nsec,flow_peak);
 	//u64 tmp_number = 1000000; 
 	long tmp_add;
 	if ( tmp_sub.tv_sec >2)
@@ -97,12 +97,12 @@ void update_bucket_contents()
 	long added_bits = tmp_add * 80;  // s * bits/s
 	//added_bits = 1000;
 	//tmp_number = 10;
-	printk(KERN_DEBUG "[mengy][update_bucket_contents] add bits %ld\n",added_bits);
+	//printk(KERN_EMERG "[mengy][update_bucket_contents] add bits %ld\n",added_bits);
 	dsshaper_my.curr_bucket_contents =dsshaper_my.curr_bucket_contents +  added_bits;
 	if (dsshaper_my.curr_bucket_contents > dsshaper_my.burst_size_)
 		dsshaper_my.curr_bucket_contents=dsshaper_my.burst_size_ ; //unsettled how to update burst_size
 	
-	printk(KERN_DEBUG "[mengy][update_bucket_contents] tmp_add %ld curr_bucket:%ld,add bits:%ld",tmp_add,dsshaper_my.curr_bucket_contents,added_bits);	
+	//printk(KERN_EMERG "[mengy][update_bucket_contents] tmp_add %ld curr_bucket:%ld,add bits:%ld",tmp_add,dsshaper_my.curr_bucket_contents,added_bits);	
 	dsshaper_my.last_time = current_time ;
 
 
@@ -120,43 +120,59 @@ enum hrtimer_restart resume(struct hrtimer *timer )
 {
 	struct timespec now;
 	getnstimeofday(&now);
-	printk(KERN_DEBUG "[mengy][schedule_packet]schedule the packet resume for 100us time:%ld.%ld\n",now.tv_sec,now.tv_nsec);
+	printk(KERN_EMERG "[mengy][resume]resume after 100us time:%ld.%ld\n",now.tv_sec,now.tv_nsec);
 	
 	struct packet_msg *msg_resume;
 	struct packet_dsshaper *packet_dsshaper_resume;
 	struct list_head *lh_msg_resume;
 	struct list_head *lh_p_resume;
-	while (!list_empty(&shape_queue))
+	if (!list_empty(&shape_queue))
 	{
-
+		
+		printk(KERN_EMERG "[mengy][resume]try get the packet and sent\n");
 		lh_p_resume = shape_queue.next;
+		printk(KERN_EMERG "[mengy][resume]get p resume\n");
 		lh_msg_resume = shape_queue_msg.next;
+		printk(KERN_EMERG "[mengy][resume]get msg resume\n");
 		msg_resume = list_entry(lh_msg_resume,struct packet_msg,list);
+		printk(KERN_EMERG "[mengy][resume]get msg entry\n");
 		packet_dsshaper_resume = list_entry(lh_p_resume,struct packet_dsshaper,list);
+		printk(KERN_EMERG "[mengy][resume]get packet entry\n");
 	
-	
-		if (in_profile(msg_resume->len)) 
+		if (true) 
 		{
 			dsshaper_my.sent_packets++;
+			printk(KERN_EMERG "[mengy][resume]try set the packet\n");
 			ath_tx_txqaddbuf(msg_resume->sc, msg_resume->txq, packet_dsshaper_resume->packet, msg_resume->internal);
-			printk(KERN_DEBUG "[mengy][resume]sent the packet number:%ld\n",dsshaper_my.sent_packets);
+			printk(KERN_EMERG "[mengy][resume]sent the packet number:%ld\n",dsshaper_my.sent_packets);
 			list_del(lh_p_resume);
 			list_del(lh_msg_resume);
 			kfree(msg_resume);
 			kfree(packet_dsshaper_resume);
+			if (!list_empty(&shape_queue))
+			{
+				getnstimeofday(&now);
+				printk(KERN_EMERG "[mengy][resume]list is not empty restart the timer %ld.%ld\n",now.tv_sec,now.tv_nsec);
+				return HRTIMER_RESTART;
+			}
+			else
+			{	
+				printk(KERN_EMERG "[mengy][resume]stop the timer\n");
+				return HRTIMER_NORESTART;
+			}
 
 		}
 		else 
 		{
 			getnstimeofday(&now);
 			long delay = count_schedule_time(msg_resume->len);
-			ktime_t ktime;
-			ktime = ktime_set( 0,(u64)delay*1000);//100us
-			printk(KERN_DEBUG "[mengy][schedule_packet]schedule the packet resume for %ldus time:%ld.%ld\n",delay,now.tv_sec,now.tv_nsec);
-			hrtimer_forward_now(&hr_timer,ktime);
+		//	ktime_t ktime;
+		//	ktime = ktime_set( 0,(u64)delay*1000);//100us
+			printk(KERN_EMERG "[mengy][schedule_packet]restart  the packet resume for %ldus time:%ld.%ld\n",delay,now.tv_sec,now.tv_nsec);
+		//	hrtimer_forward_now(&hr_timer,ktime);
 			return HRTIMER_RESTART;
 		} 
-		}  
+	}  
 	 	return HRTIMER_NORESTART;
 } 
 
@@ -166,12 +182,12 @@ void schedule_packet(struct list_head *p,int len)
 	if(delay == 0)
 		delay=100;
 	ktime_t ktime;
-	ktime = ktime_set( 0,(u64)delay*1000);//100us
+	ktime = ktime_set( 0,100000);//100us
 	hrtimer_init(&hr_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL );
 	hr_timer.function = &resume;
 	struct timespec now;
 	getnstimeofday(&now);
-	printk(KERN_DEBUG "[mengy][schedule_packet]schedule the packet begin for %ldus time:%ld.%ld\n",delay,now.tv_sec,now.tv_nsec);
+	printk(KERN_EMERG "[mengy][schedule_packet]schedule the packet begin for 100us time:%ld.%ld\n",now.tv_sec,now.tv_nsec);
 	hrtimer_start( &hr_timer, ktime, HRTIMER_MODE_REL );
 	return;
 }
@@ -208,7 +224,7 @@ bool shape_packet(struct list_head *packet,struct ath_softc *sc, struct ath_txq 
 	//	spin_unlock_bh(&lock);
 
 		dsshaper_my.shaped_packets++;
-		printk(KERN_DEBUG "[mengy][shape_packet]shape the packe shape number:%ld\n",dsshaper_my.shaped_packets);
+		printk(KERN_EMERG "[mengy][shape_packet]shape the packe shape number:%ld\n",dsshaper_my.shaped_packets);
 		if(schedule_flag ==1)
 			schedule_packet(packet,len);
 	return true;
@@ -221,7 +237,7 @@ bool in_profile(int size)
 
 	long packetsize = size * 8;
 
-	printk(KERN_DEBUG "[mengy][in_profile] packetsize:%ld,curr_bucket:%ld\n",packetsize,dsshaper_my.curr_bucket_contents);	
+	printk(KERN_EMERG "[mengy][in_profile] packetsize:%ld,curr_bucket:%ld\n",packetsize,dsshaper_my.curr_bucket_contents);	
 	if (packetsize > dsshaper_my.curr_bucket_contents)
 		return false;
 	else {
@@ -241,20 +257,32 @@ void recv(int len, struct ath_softc* sc, struct ath_txq* txq, struct list_head* 
 		getnstimeofday(&now);
 		spin_lock_init(&lock);
 		dsshaper_my.last_time = now;
-		printk(KERN_DEBUG "[mengy][recv]init finished\n");		
+		printk(KERN_EMERG "[mengy][recv]init finished\n");		
 		init_flag=1;
 	}				
 	dsshaper_my.received_packets++;
-	printk(KERN_DEBUG "[mengy][recv]receive packet number :%ld \n",dsshaper_my.received_packets);
+	printk(KERN_EMERG "[mengy][recv]receive packet number :%ld \n",dsshaper_my.received_packets);
 	//spin_lock_bh(&lock);
 	/* test for the q*/
-	if(dsshaper_my.received_packets >= 501 &&  dsshaper_my.received_packets <= 505)
+	if(dsshaper_my.received_packets > 301)
 	{	
-		shape_packet(p,sc,txq,internal,len,0);	
-	}
+		if(list_empty(&shape_queue))
+		{
+			printk(KERN_EMERG "[mengy][recv]shape and schedule the packet number :%ld \n",dsshaper_my.received_packets);
+			shape_packet(p,sc,txq,internal,len,1);
+		}
+		else
+		{
+			printk(KERN_EMERG "[mengy][recv]just shape the packet number :%ld \n",dsshaper_my.received_packets);
+			shape_packet(p,sc,txq,internal,len,0);
+		}
+		//shape_packet(p,sc,txq,internal,len,1);	
 
+		return;
+	}
+/*
 		
-	if(dsshaper_my.received_packets == 505)
+	if(dsshaper_my.received_packets == 306)
 	{
 		struct packet_msg *msg_resume;
         	struct packet_dsshaper *packet_dsshaper_resume;
@@ -273,7 +301,7 @@ void recv(int len, struct ath_softc* sc, struct ath_txq* txq, struct list_head* 
                 	//if (in_profile(msg_resume->len))
                 //	{
                         	dsshaper_my.sent_packets++;
-                        	ath_tx_txqaddbuf(msg_resume->sc, msg_resume->txq, packet_dsshaper_resume->packet, msg_resume->internal);
+         //               	ath_tx_txqaddbuf(msg_resume->sc, msg_resume->txq, packet_dsshaper_resume->packet, msg_resume->internal);
                         	list_del(lh_p_resume);
                         	list_del(lh_msg_resume);
 				printk(KERN_DEBUG "[mengy][q test]free count %ld\n",free_count);			
@@ -282,17 +310,18 @@ void recv(int len, struct ath_softc* sc, struct ath_txq* txq, struct list_head* 
 			}		
 	
 	}
-	else
+	
+*/
 		ath_tx_txqaddbuf(sc, txq, p, internal);
 	return;
 	if (list_empty(&shape_queue)) 
 	{
-//		  There are no packets being shapped. Tests profile.
+///		  There are no packets being shapped. Tests profile.
 		if (in_profile(len)) 
 		{ 	
 			spin_unlock_bh(&lock);		
 			dsshaper_my.sent_packets++;
-			printk(KERN_DEBUG "[mengy][recv]sent the packet number:%ld\n",dsshaper_my.sent_packets);
+			printk(KERN_EMERG "[mengy][recv]sent the packet number:%ld\n",dsshaper_my.sent_packets);
 			ath_tx_txqaddbuf(sc, txq, p, internal);
 		} 
 		else
@@ -306,7 +335,7 @@ void recv(int len, struct ath_softc* sc, struct ath_txq* txq, struct list_head* 
   	{		  		
 //		  There are packets being shapped. Shape this packet too.
 			shape_packet(p,sc,txq,internal,len,0);   
-			printk(KERN_DEBUG "[mengy][recv]just add buffer queue\n");
+			printk(KERN_EMERG "[mengy][recv]just add buffer queue\n");
 		 //ath_tx_txqaddbuf(sc, txq, p, internal); 
 	}
 }
@@ -369,7 +398,7 @@ void update_deqrate(struct timespec p_delay,struct timespec all_delay, int pktsi
 		
 	}
 	update_bucket_contents();	
-	printk(KERN_DEBUG "[mengy][update_deqrate after peak ][time=%ld.%ld][rate=%ld][delay_avg=%ld][pri_peak=%ld][now_peak_=%ld]\n",now_.tv_sec,now_.tv_nsec,rate_avg_,delay_avg_,pri_peak_,flow_peak);
+	//printk(KERN_EMERG "[mengy][update_deqrate after peak ][time=%ld.%ld][rate=%ld][delay_avg=%ld][pri_peak=%ld][now_peak_=%ld]\n",now_.tv_sec,now_.tv_nsec,rate_avg_,delay_avg_,pri_peak_,flow_peak);
 	
 	
 	

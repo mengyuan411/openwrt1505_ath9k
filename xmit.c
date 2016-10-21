@@ -2077,6 +2077,7 @@ void ath_txq_schedule_all(struct ath_softc *sc)
 void ath_tx_txqaddbuf(struct ath_softc *sc, struct ath_txq *txq,
 			     struct list_head *head, bool internal) //change by mengy
 {
+	printk(KERN_EMERG "[mengy][ath_tx_txqaddbuf] get into the function\n");	
 	struct ath_hw *ah = sc->sc_ah;
 	struct ath_common *common = ath9k_hw_common(ah);
 	struct ath_buf *bf, *bf_last;
@@ -2090,44 +2091,53 @@ void ath_tx_txqaddbuf(struct ath_softc *sc, struct ath_txq *txq,
 
 	if (list_empty(head))
 		return;
-
+	printk(KERN_EMERG "[mengy][ath_tx_txqaddbuf] get into the one position\n");
 	edma = !!(ah->caps.hw_caps & ATH9K_HW_CAP_EDMA);
 	bf = list_first_entry(head, struct ath_buf, list);
 	bf_last = list_entry(head->prev, struct ath_buf, list);
 
 	ath_dbg(common, QUEUE, "qnum: %d, txq depth: %d\n",
 		txq->axq_qnum, txq->axq_depth);
-
+	printk(KERN_EMERG "[mengy][ath_tx_txqaddbuf] get into the two position\n");
+	spin_lock_bh(&txq->axq_lock);
 	if (edma && list_empty(&txq->txq_fifo[txq->txq_headidx])) {
+		printk(KERN_EMERG "[mengy][ath_tx_txqaddbuf] get into the 2-1 position\n");
 		list_splice_tail_init(head, &txq->txq_fifo[txq->txq_headidx]);
+		//spin_unlock_bh(&txq->axq_lock);
+		printk(KERN_EMERG "[mengy][ath_tx_txqaddbuf] get into the 2-2 position\n");
 		INCR(txq->txq_headidx, ATH_TXFIFO_DEPTH);
+		printk(KERN_EMERG "[mengy][ath_tx_txqaddbuf] get into the 2-3 position\n");
 		puttxbuf = true;
 	} else {
+		printk(KERN_EMERG "[mengy][ath_tx_txqaddbuf] get into the 2-4 position\n");
 		list_splice_tail_init(head, &txq->axq_q);
-
+		printk(KERN_EMERG "[mengy][ath_tx_txqaddbuf] get into the 2-5 position\n");
 		if (txq->axq_link) {
+			printk(KERN_EMERG "[mengy][ath_tx_txqaddbuf] get into the 2-6 position\n");
 			ath9k_hw_set_desc_link(ah, txq->axq_link, bf->bf_daddr);
+			printk(KERN_EMERG "[mengy][ath_tx_txqaddbuf] get into the 2-7 position\n");
 			ath_dbg(common, XMIT, "link[%u] (%p)=%llx (%p)\n",
 				txq->axq_qnum, txq->axq_link,
 				ito64(bf->bf_daddr), bf->bf_desc);
 		} else if (!edma)
 			puttxbuf = true;
-
+		printk(KERN_EMERG "[mengy][ath_tx_txqaddbuf] get into the 2-8 position\n");
 		txq->axq_link = bf_last->bf_desc;
 	}
-
+	spin_unlock_bh(&txq->axq_lock);
 	if (puttxbuf) {
 		TX_STAT_INC(txq->axq_qnum, puttxbuf);
+		printk(KERN_EMERG "[mengy][ath_tx_txqaddbuf] get into the 3 position\n");
 		ath9k_hw_puttxbuf(ah, txq->axq_qnum, bf->bf_daddr);
 		ath_dbg(common, XMIT, "TXDP[%u] = %llx (%p)\n",
 			txq->axq_qnum, ito64(bf->bf_daddr), bf->bf_desc);
 	}
-
+	printk(KERN_EMERG "[mengy][ath_tx_txqaddbuf] get into the 4 position\n");
 	if (!edma || sc->tx99_state) {
 		TX_STAT_INC(txq->axq_qnum, txstart);
 		ath9k_hw_txstart(ah, txq->axq_qnum);
 	}
-
+	printk(KERN_EMERG "[mengy][ath_tx_txqaddbuf] get into the 5 position\n");
 	if (!internal) {
 		while (bf) {
 			txq->axq_depth++;
@@ -2139,6 +2149,7 @@ void ath_tx_txqaddbuf(struct ath_softc *sc, struct ath_txq *txq,
 			bf_last->bf_next = NULL;
 		}
 	}
+	printk(KERN_EMERG "[mengy][ath_tx_txqaddbuf] get out the function\n");
 }
 
 static void ath_tx_send_normal(struct ath_softc *sc, struct ath_txq *txq,
