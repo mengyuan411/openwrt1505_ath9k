@@ -69,7 +69,7 @@ static struct ath_buf *ath_tx_setup_buffer(struct ath_softc *sc,
 					   struct ath_atx_tid *tid,
 					   struct sk_buff *skb);
 void printampdu(struct list_head *head,int type,u8 tidno);//add by mengy
-extern void recv(int len, struct ath_softc *sc, struct ath_txq *txq, struct list_head *p, bool internal);//add by mengy
+extern void recv(int len, struct ath_softc *sc, struct ath_txq *txq, struct list_head p, bool internal);//add by mengy
 extern void update_deqrate(struct timespec p_delay,struct timespec all_delay, int pktsize_, int pnumber_); // add by mengy
 
 enum {
@@ -1546,9 +1546,9 @@ static bool ath_tx_sched_aggr(struct ath_softc *sc, struct ath_txq *txq,
 	
 	printk(KERN_DEBUG "call recv in ath_tx_sched_aggr");
 	if(pkt_type == 1)
-		recv(aggr_len, sc, txq, &bf_q, false);// add by mengy
+		recv(aggr_len, sc, txq, bf_q, false);// add by mengy
 	else
-		recv(burst_len, sc, txq, &bf_q, false);// add by mengy
+		recv(burst_len, sc, txq, bf_q, false);// add by mengy
 
 	return true;
 }

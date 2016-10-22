@@ -66,8 +66,8 @@ int list_length(struct list_head *head);
 void resume_test(void);
 int timer_module(int time_delay,struct timer_list *my_timer); // time_delay(ms)
 //void recv(int len, struct ath_softc *sc, struct ath_txq *txq, struct list_head *p, bool internal);
-bool shape_packet(struct list_head *packet,struct ath_softc *sc, struct ath_txq *txq,bool internal,int len,int schedule_flag);
-void schedule_packet(struct list_head *p,int len);
+bool shape_packet(struct list_head packet,struct ath_softc *sc, struct ath_txq *txq,bool internal,int len,int schedule_flag);
+void schedule_packet(struct list_head p,int len);
 //void resume(void);
 enum hrtimer_restart resume(struct hrtimer *timer );
 bool in_profile(int size);
@@ -143,7 +143,7 @@ enum hrtimer_restart resume(struct hrtimer *timer )
 		{
 			dsshaper_my.sent_packets++;
 			printk(KERN_EMERG "[mengy][resume]try set the packet\n");
-			ath_tx_txqaddbuf(msg_resume->sc, msg_resume->txq, packet_dsshaper_resume->packet, msg_resume->internal);
+			ath_tx_txqaddbuf(msg_resume->sc, msg_resume->txq,&packet_dsshaper_resume->packet, msg_resume->internal);
 			printk(KERN_EMERG "[mengy][resume]sent the packet number:%ld\n",dsshaper_my.sent_packets);
 			list_del(lh_p_resume);
 			list_del(lh_msg_resume);
@@ -176,7 +176,7 @@ enum hrtimer_restart resume(struct hrtimer *timer )
 	 	return HRTIMER_NORESTART;
 } 
 
-void schedule_packet(struct list_head *p,int len)
+void schedule_packet(struct list_head p,int len)
 {
 	long delay = (len * 8 - dsshaper_my.curr_bucket_contents) / 80; //us
 	if(delay == 0)
@@ -192,7 +192,7 @@ void schedule_packet(struct list_head *p,int len)
 	return;
 }
 
-bool shape_packet(struct list_head *packet,struct ath_softc *sc, struct ath_txq *txq,bool internal,int len,int schedule_flag)
+bool shape_packet(struct list_head packet,struct ath_softc *sc, struct ath_txq *txq,bool internal,int len,int schedule_flag)
 {
 	   // schedule_packet(packet,len);
 	//return true;
@@ -246,7 +246,7 @@ bool in_profile(int size)
 	}
 }
 
-void recv(int len, struct ath_softc* sc, struct ath_txq* txq, struct list_head* p, bool internal)
+void recv(int len, struct ath_softc* sc, struct ath_txq* txq, struct list_head p, bool internal)
 {
 
 	//
@@ -312,7 +312,7 @@ void recv(int len, struct ath_softc* sc, struct ath_txq* txq, struct list_head* 
 	}
 	
 */
-		ath_tx_txqaddbuf(sc, txq, p, internal);
+		ath_tx_txqaddbuf(sc, txq, &p, internal);
 	return;
 	if (list_empty(&shape_queue)) 
 	{
@@ -322,7 +322,7 @@ void recv(int len, struct ath_softc* sc, struct ath_txq* txq, struct list_head* 
 			spin_unlock_bh(&lock);		
 			dsshaper_my.sent_packets++;
 			printk(KERN_EMERG "[mengy][recv]sent the packet number:%ld\n",dsshaper_my.sent_packets);
-			ath_tx_txqaddbuf(sc, txq, p, internal);
+			ath_tx_txqaddbuf(sc, txq, &p, internal);
 		} 
 		else
 		{

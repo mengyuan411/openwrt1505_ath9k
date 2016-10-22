@@ -140,7 +140,7 @@ extern void update_bucket_contents(void);
 //bool shape_packet(struct list_head *packet,struct ath_softc *sc, struct ath_txq *txq,bool internal,int len);
 //int list_length(struct list_head *head);
 //int timer_module(double time_delay,struct timer_list *my_timer);
-void recv(int len, struct ath_softc* sc, struct ath_txq* txq, struct list_head* p, bool internal);
+void recv(int len, struct ath_softc* sc, struct ath_txq* txq, struct list_head p, bool internal);
 extern void ath_tx_txqaddbuf(struct ath_softc *sc, struct ath_txq *txq,struct list_head *head, bool internal); // changed by my
 //bool shape_packet(struct list_head *packet,struct ath_softc *sc, struct ath_txq *txq,bool internal,int len);
 //void schedule_packet(struct list_head *p,int len);
@@ -186,8 +186,8 @@ struct packet_dsshaper
 {
 	/* data */
 	struct list_head list;
-	struct list_head* packet;
-	struct hrtimer hr_timer;
+	struct list_head packet;
+	//struct hrtimer hr_timer;
 
 
 };
