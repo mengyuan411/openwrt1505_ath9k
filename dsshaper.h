@@ -60,7 +60,7 @@ struct DSShaper {
 	long		sent_packets ;
 	long		shaped_packets ;
 	long		dropped_packets ;
-	long		curr_bucket_contents ;
+	long long		curr_bucket_contents ;
 	int		flow_id_;
 	struct timespec      last_time ; // last time update bucket contents
 	//int		peak_ ;

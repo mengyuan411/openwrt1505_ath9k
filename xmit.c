@@ -1545,7 +1545,7 @@ static bool ath_tx_sched_aggr(struct ath_softc *sc, struct ath_txq *txq,
 	ath_tx_fill_desc(sc, bf, txq, aggr_len);
 	//ath_tx_txqaddbuf(sc, txq, &bf_q, false); //change by mengy for next
 	
-	printk(KERN_DEBUG "call recv in ath_tx_sched_aggr\n");
+	//printk(KERN_DEBUG "call recv in ath_tx_sched_aggr\n");
 	if(pkt_type == 1)
 		recv(aggr_len, sc, txq, bf_q, false);// add by mengy
 	else
@@ -2931,17 +2931,17 @@ void ath_tx_edma_tasklet(struct ath_softc *sc)
 		{
 			if(update_te_flag == 0)
 			{
-				printk(KERN_DEBUG "ath9k error the te is not update this time\n");
+				//printk(KERN_DEBUG "ath9k error the te is not update this time\n");
 				return;
 			}
 			if(update_tw_flag == 0)
 			{
-				printk(KERN_DEBUG "ath9k error the tw is not update this time\n");
+				//printk(KERN_DEBUG "ath9k error the tw is not update this time\n");
 				return;
 			}
 			if(last_ack_update_flag == 0)
 			{
-				printk(KERN_DEBUG "ath9k error the last_ack is not update before\n");
+				//printk(KERN_DEBUG "ath9k error the last_ack is not update before\n");
 				return;
 			}
 			struct timespec th;
@@ -2951,7 +2951,7 @@ void ath_tx_edma_tasklet(struct ath_softc *sc)
 				th = last_ack;	
 			struct timespec p_delay = timespec_sub(this_ack,th);
 			struct timespec all_delay = timespec_sub(this_ack,this_tw);
-			update_deqrate(p_delay,all_delay,packet_size_all,packet_number);
+			//update_deqrate(p_delay,all_delay,packet_size_all,packet_number);
 			last_ack_update_flag = 0;
 		}
 			last_ack=this_ack;

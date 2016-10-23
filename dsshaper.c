@@ -1,4 +1,5 @@
 /*staopyright (c) 1999, Federal University of Pernambuco - Brazil.
+	printk(KERN_EMERG "[mengy][update_bucket_contents] before contents %ld\n",dsshaper_my.curr_bucket_contents);
  * All rights reserved.
  *
  * License is granted to copy, to use, and to make and to use derivative
@@ -17,6 +18,7 @@
 #include "ath9k.h"
 #include "ar9003_mac.h"
 #include <linux/math64.h>
+#include <asm/div64.h>
 #include <linux/spinlock.h>
 #include <linux/hrtimer.h>
 #include <linux/ktime.h>
@@ -35,15 +37,15 @@ struct timespec delay_sum_ = {0};
 int pktsize_sum_ = 0;
 struct timespec checkInterval_ = {0,5000000};
 struct timespec checktime_;
-int throughput_sum_ = 0;
+long throughput_sum_ = 0;
 int alpha_ = 0; //%
 spinlock_t lock;
 int rate_avg_ = 0; //bits/us
 int delay_avg_ = 0;
 int switchOn_ = 0;
 int delay_optimal_ = 2000;//us
-int fix_peak = 8000000; //bits/s
-int flow_peak = 8000000; // bits/s
+int fix_peak = 100000000; //bits/s
+int flow_peak = 100000000; // bits/s
 int beta_ = 100000; //bits/s
 int burst_size_ = 80000;// bits
 int deltaIncrease_ = 1000000; //bits/s
@@ -76,31 +78,31 @@ void update_bucket_contents()
 	struct timespec current_time;
 	getnstimeofday(&current_time);
 	struct timespec tmp_sub = timespec_sub(current_time,dsshaper_my.last_time);
-	printk(KERN_EMERG "[mengy][update_bucket_contents] before contents %ld time gap  %ld.%ld flow_peak %ld\n",dsshaper_my.curr_bucket_contents,tmp_sub.tv_sec,tmp_sub.tv_nsec,flow_peak);
+	//printk(KERN_EMERG "[mengy][update_bucket_contents] before contents %ld time gap  %ld.%ld flow_peak %ld\n",dsshaper_my.curr_bucket_contents,tmp_sub.tv_sec,tmp_sub.tv_nsec,flow_peak);
 	//u64 tmp_number = 1000000; 
-	long tmp_add;
+	long long tmp_add;
 	if ( tmp_sub.tv_sec >2)
 		tmp_add = tmp_sub.tv_nsec /1000;
 	else
 		tmp_add = tmp_sub.tv_sec * 1000000 + tmp_sub.tv_nsec /1000;
-	long added_bits = tmp_add;  // s * bits/s
+	long long added_bits = div64_s64(tmp_add * flow_peak ,(long long) 1000000) ; // us * bits/s / 1000000
 	//added_bits = 1000;
 	//tmp_number = 10;
-	//printk(KERN_EMERG "[mengy][update_bucket_contents] add bits %ld\n",added_bits);
+	printk(KERN_EMERG "[mengy][update_bucket_contents] add bits %lld\n",added_bits);
 	dsshaper_my.curr_bucket_contents =dsshaper_my.curr_bucket_contents +  added_bits;
 	if (dsshaper_my.curr_bucket_contents > dsshaper_my.burst_size_)
 		dsshaper_my.curr_bucket_contents=dsshaper_my.burst_size_ ; //unsettled how to update burst_size
 	
-	printk(KERN_EMERG "[mengy][update_bucket_contents] tmp_add %ldus curr_bucket:%ld,add bits:%ld\n",tmp_add,dsshaper_my.curr_bucket_contents,added_bits);	
+	//printk(KERN_EMERG "[mengy][update_bucket_contents] tmp_add %ldus curr_bucket:%ld,add bits:%ld\n",tmp_add,dsshaper_my.curr_bucket_contents,added_bits);	
 	getnstimeofday(&current_time);
 	dsshaper_my.last_time = current_time ;
 
 
 }
 
-long count_schedule_time(int len)
+long long count_schedule_time(int len)
 {
-	long delay = (len * 8 - dsshaper_my.curr_bucket_contents);
+	long long delay = div64_s64((((long long)len * 8 - dsshaper_my.curr_bucket_contents) * 1000000),(long long) flow_peak) ; // bits / (bits/s /1000000)   = us
 	if(delay == 0)
 		delay=100;
 	return delay;
@@ -110,7 +112,7 @@ enum hrtimer_restart resume(struct hrtimer *timer )
 {
 	struct timespec now;
 	getnstimeofday(&now);
-	printk(KERN_EMERG "[mengy][resume]resume after time:%ld.%ld\n",now.tv_sec,now.tv_nsec);
+	//printk(KERN_EMERG "[mengy][resume]resume after time:%ld.%ld\n",now.tv_sec,now.tv_nsec);
 	
 	struct packet_msg *packet_resume;
 	//struct packet_dsshaper *packet_dsshaper_resume;
@@ -123,30 +125,30 @@ enum hrtimer_restart resume(struct hrtimer *timer )
 		if (in_profile(packet_resume->len)) 
 		{
 			dsshaper_my.sent_packets++;
-			printk(KERN_EMERG "[mengy][resume]try set the packet\n");
+			//printk(KERN_EMERG "[mengy][resume]try set the packet\n");
 			ath_tx_txqaddbuf(packet_resume->sc, packet_resume->txq,&packet_resume->packet, packet_resume->internal);
-			printk(KERN_EMERG "[mengy][resume]sent the packet number:%ld\n",dsshaper_my.sent_packets);
+			//printk(KERN_EMERG "[mengy][resume]sent the packet number:%ld\n",dsshaper_my.sent_packets);
 			list_del(shape_queue.next);
 			kfree(packet_resume);
 		}
 		else 
 		{
-			long delay = count_schedule_time(packet_resume->len);
+			long long delay = count_schedule_time(packet_resume->len);
 			ktime_t ktime;
-			ktime = ktime_set( 0,(u64)delay*1000);//100us
+			ktime = ktime_set( 0,delay*1000);//100us
 			getnstimeofday(&now);
-			printk(KERN_EMERG "[mengy][resume]restart the packet resume for %ldus time:%ld.%ld\n",delay,now.tv_sec,now.tv_nsec);
+			printk(KERN_EMERG "[mengy][resume]restart the packet resume for %lldus time:%ld.%ld\n",delay,now.tv_sec,now.tv_nsec);
 			hrtimer_forward_now(&hr_timer,ktime);
 			return HRTIMER_RESTART;
 		} 
 	}
-		printk(KERN_EMERG "[mengy][resume]stop the timer\n");
+		//printk(KERN_EMERG "[mengy][resume]stop the timer\n");
 		return HRTIMER_NORESTART;
 } 
 
 void schedule_packet(int len)
 {
-	long delay = (len * 8 - dsshaper_my.curr_bucket_contents); //us
+	long long delay = div64_s64((((long long )len * 8 - dsshaper_my.curr_bucket_contents) * 1000000),(long long) flow_peak) ; //us
 	if(delay == 0)
 		delay=100;
 	ktime_t ktime;
@@ -155,7 +157,7 @@ void schedule_packet(int len)
 	hr_timer.function = &resume;
 	struct timespec now;
 	getnstimeofday(&now);
-	printk(KERN_EMERG "[mengy][schedule_packet]schedule the packet begin for %ldus time:%ld.%ld\n",delay,now.tv_sec,now.tv_nsec);
+	printk(KERN_EMERG "[mengy][schedule_packet]schedule the packet begin for %lldus time:%ld.%ld\n",delay,now.tv_sec,now.tv_nsec);
 	hrtimer_start( &hr_timer, ktime, HRTIMER_MODE_REL );
 	return;
 }
@@ -163,13 +165,14 @@ void schedule_packet(int len)
 bool shape_packet(struct list_head packet,struct ath_softc *sc, struct ath_txq *txq,bool internal,int len,int schedule_flag)
 {
 /*
-	if (list_length(&shape_queue) >= dsshaper_my.max_queue_length) {
+	if (list_length(&shape_queue) >= 2) {
 			//drop (p);// unsettled how to drop?
-			printk(KERN_DEBUG "[mengy][shape_packet]shape the packet fails over queue length\n");
+			//printk(KERN_DEBUG "[mengy][shape_packet]shape the packet fails over queue length\n");
 			dsshaper_my.dropped_packets++;
+			//printk(KERN_DEBUG "[mengy][shape_packet] drop the packets %ld\n",dsshaper_my.dropped_packets);
 			return false;
-		} */
-
+		} 
+*/
 		struct packet_msg *my_packet;
 		my_packet = kzalloc(sizeof(struct packet_msg),GFP_KERNEL);
 		INIT_LIST_HEAD(&my_packet->list);//unsettled
@@ -182,7 +185,7 @@ bool shape_packet(struct list_head packet,struct ath_softc *sc, struct ath_txq *
 	//	spin_unlock_bh(&lock);
 
 		dsshaper_my.shaped_packets++;
-		printk(KERN_EMERG "[mengy][shape_packet]shape the packe shape number:%ld\n",dsshaper_my.shaped_packets);
+		//printk(KERN_EMERG "[mengy][shape_packet]shape the packe shape number:%ld\n",dsshaper_my.shaped_packets);
 		if(schedule_flag ==1)
 			schedule_packet(len);
 	return true;
@@ -195,11 +198,16 @@ bool in_profile(int size)
 
 	long packetsize = size * 8;
 
-	printk(KERN_EMERG "[mengy][in_profile] packetsize:%ld,curr_bucket:%ld\n",packetsize,dsshaper_my.curr_bucket_contents);	
+	//printk(KERN_EMERG "[mengy][in_profile] packetsize:%ld,curr_bucket:%ld\n",packetsize,dsshaper_my.curr_bucket_contents);	
 	if(packetsize > dsshaper_my.burst_size_)
 	{
-		dsshaper_my.curr_bucket_contents=0;
-		return true;
+		if(dsshaper_my.curr_bucket_contents == dsshaper_my.burst_size_)
+		{
+			dsshaper_my.curr_bucket_contents=0;
+			return true;
+		}
+		else
+			return false;
 	}
 
 	if (packetsize > dsshaper_my.curr_bucket_contents)
@@ -221,20 +229,26 @@ void recv(int len, struct ath_softc* sc, struct ath_txq* txq, struct list_head p
 		getnstimeofday(&now);
 		spin_lock_init(&lock);
 		dsshaper_my.last_time = now;
-		printk(KERN_EMERG "[mengy][recv]init finished\n");		
+		//long long test1 = 100000000;
+		//long long test2 = 1000000;
+		//long long  result;
+		//result = div64_s64(test1,test2);
+		
+	//	printk(KERN_EMERG "[mengy][recv]resutl div %lld\n",result);		
 		init_flag=1;
 	}				
 	dsshaper_my.received_packets++;
-	printk(KERN_EMERG "[mengy][recv]receive packet number :%ld \n",dsshaper_my.received_packets);
+	//printk(KERN_EMERG "[mengy][recv]receive packet number :%ld \n",dsshaper_my.received_packets);
 
 	if (list_empty(&shape_queue)) 
 	{
 ///		  There are no packets being shapped. Tests profile.
 		if (in_profile(len)) 
+	//	if(true)
 		{ 	
 			//spin_unlock_bh(&lock);		
 			dsshaper_my.sent_packets++;
-			printk(KERN_EMERG "[mengy][recv]sent the packet number:%ld\n",dsshaper_my.sent_packets);
+			//printk(KERN_EMERG "[mengy][recv]sent the packet number:%ld\n",dsshaper_my.sent_packets);
 			ath_tx_txqaddbuf(sc, txq, &p, internal);
 		} 
 		else
@@ -248,7 +262,7 @@ void recv(int len, struct ath_softc* sc, struct ath_txq* txq, struct list_head p
   	{		  		
 //		  There are packets being shapped. Shape this packet too.
 			shape_packet(p,sc,txq,internal,len,0);   
-			printk(KERN_EMERG "[mengy][recv]just add buffer queue\n");
+			//printk(KERN_EMERG "[mengy][recv]just add buffer queue\n");
 		 //ath_tx_txqaddbuf(sc, txq, p, internal); 
 	}
 }
@@ -301,6 +315,7 @@ void update_deqrate(struct timespec p_delay,struct timespec all_delay, int pktsi
 					flow_peak = rate_avg_ * 1000000 ;
 			}
 		}else{
+			update_bucket_contents();
 			flow_peak = fix_peak; //fixed rate 
 		}
 		ntrans_ = 0;
@@ -310,7 +325,7 @@ void update_deqrate(struct timespec p_delay,struct timespec all_delay, int pktsi
 		checktime_ = now_;
 		
 	}
-	update_bucket_contents();	
+	//update_bucket_contents();	
 	//printk(KERN_EMERG "[mengy][update_deqrate after peak ][time=%ld.%ld][rate=%ld][delay_avg=%ld][pri_peak=%ld][now_peak_=%ld]\n",now_.tv_sec,now_.tv_nsec,rate_avg_,delay_avg_,pri_peak_,flow_peak);
 	
 	
@@ -318,8 +333,8 @@ void update_deqrate(struct timespec p_delay,struct timespec all_delay, int pktsi
 	throughput_sum_ += pktsize_;
 	tmp_sub = timespec_sub(now_,checkThtime_);
 	if(  timespec_compare(&tmp_sub,&checkThInterval_)>0 ){
-		int throughput_avg_ = ( 8 * throughput_sum_ )/((int) (tmp_sub.tv_sec * 1000000 + tmp_sub.tv_nsec / 1000 )) * 1000;
-		//printk(KERN_DEBUG "[mengy][update_deqrate throughput][time=%ld.%ld][bytes=%ld][throughput=%ld Kbps]\n",now_.tv_sec,now_.tv_nsec,throughput_sum_,throughput_avg_);
+		long long throughput_avg_ = ( 8 * throughput_sum_ ) * 1000 /(tmp_sub.tv_sec * 1000000 + tmp_sub.tv_nsec / 1000 );
+		printk(KERN_DEBUG "[mengy][update_deqrate throughput][time=%ld.%ld][bytes=%ld][throughput=%ld Kbps]\n",now_.tv_sec,now_.tv_nsec,throughput_sum_,throughput_avg_);
 		throughput_sum_ = 0;
 		checkThtime_ = now_;
 	}
