@@ -281,7 +281,7 @@ void recv(int len, struct ath_softc* sc, struct ath_txq* txq, struct list_head p
 
 void update_deqrate(struct timespec p_delay,struct timespec all_delay, int pktsize_, int pnumber_)
 {
-	//printk(KERN_DEBUG "pdelay:%ld.%ld,alldelay_:%ld.%ld,pktsize_:%ld,pnumber_:%ld\n",pdelay_sec,pdelay_nsec,alldelay_sec,alldelay_nsec,pktsize_,pnumber_);
+	//printk(KERN_DEBUG "pdelay:%ld.%ld,pktsize_:%ld,pnumber_:%ld\n",p_delay.tv_sec,p_delay.tv_nsec,pktsize_,pnumber_);
 	struct timespec now_;
 	getnstimeofday(&now_);
 	//double now_ = Scheduler::instance().clock();
@@ -299,16 +299,26 @@ void update_deqrate(struct timespec p_delay,struct timespec all_delay, int pktsi
 
 
 	long long pri_peak_ = flow_peak;
+	//printk(KERN_DEBUG "pdelay:%ld.%ld,pktsize_:%ld,pnumber_:%ld,ntrans_:%ld\n",p_delay.tv_sec,p_delay.tv_nsec,pktsize_,pnumber_,ntrans_);	
 	ntrans_ = ntrans_ + pnumber_;
+	//printk(KERN_DEBUG "pdelay:%ld.%ld,pktsize_:%ld,pnumber_:%ld,ntrans_:%ld,delay_sum:%d.%d\n",p_delay.tv_sec,p_delay.tv_nsec,pktsize_,pnumber_,ntrans_,delay_sum_.tv_sec,delay_sum_.tv_nsec);
 	//delay_sum_ += pdelay_;
 	delay_sum_ = timespec_add(delay_sum_,p_delay);
+	//printk(KERN_DEBUG "pdelay:%ld.%ld,pktsize_:%ld,pnumber_:%ld,ntrans_:%ld,delay_sum:%d.%d\n",p_delay.tv_sec,p_delay.tv_nsec,pktsize_,pnumber_,ntrans_,delay_sum_.tv_sec,delay_sum_.tv_nsec);
 	pktsize_sum_ += pktsize_*8;
 
 	struct timespec tmp_sub = timespec_sub(now_, checktime_); // unsettled checktime_
 	if( timespec_compare(&tmp_sub,&checkInterval_) >0 ){
-		int delay_instant_ = (delay_sum_.tv_sec * 1000000 + delay_sum_.tv_nsec/1000)/ntrans_; //us
+		//printk(KERN_DEBUG "pdelay:%ld.%ld,pktsize_:%ld,pnumber_:%ld,ntrans_:%ld,delay_sum:%ld.%ld\n",p_delay.tv_sec,p_delay.tv_nsec,pktsize_,pnumber_,ntrans_,delay_sum_.tv_sec,delay_sum_.tv_nsec);
+		int delay_instant_;
+		//int tmpus = delay_sum_.tv_sec * 1000000 + delay_sum_.tv_nsec/1000;
+		//int tmpdelay = tmpus / ntrans_;
+		//printk(KERN_EMERG "[mengy][update_deqrate after peak ][tmpus=%ld][delay_instant=%ld][ntrans=%ld][delay_sum=%ld.%ld]\n",tmpus,tmpdelay,ntrans_,delay_sum_.tv_sec,delay_sum_.tv_nsec);
+		delay_instant_ = (delay_sum_.tv_sec * 1000000 + delay_sum_.tv_nsec/1000) / ntrans_; //us
 		delay_avg_ = alpha_ * delay_avg_  / 100 + ( 100 - alpha_) * delay_instant_/100;//us
-		
+		//delay_avg_ = delay_instant_;
+		//printk(KERN_EMERG "[mengy][update_deqrate after peak ][delay_avg=%ld][delay_instant=%ld][ntrans=%ld][delay_sum=%ld.%ld]\n",delay_avg_,delay_instant_,ntrans_,delay_sum_.tv_sec,delay_sum_.tv_nsec);
+
 		
 		
 		rate_avg_ = div64_s64(((long long)pktsize_sum_ * 1000000),(delay_sum_.tv_sec * 1000000 + delay_sum_.tv_nsec /1000)) ; //bits/us
@@ -338,7 +348,7 @@ void update_deqrate(struct timespec p_delay,struct timespec all_delay, int pktsi
 		
 	}
 	//update_bucket_contents();	
-	printk(KERN_EMERG "[mengy][update_deqrate after peak ][rate=%lld][delay_avg=%lld][pri_peak=%lld][now_peak_=%lld]\n",rate_avg_,delay_avg_,pri_peak_,flow_peak);
+	printk(KERN_EMERG "[mengy][update_deqrate after peak ][rate=%lld][delay_avg=%ld][pri_peak=%lld][now_peak_=%lld]\n",rate_avg_,delay_avg_,pri_peak_,flow_peak);
 	
 	
 	

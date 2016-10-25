@@ -2863,7 +2863,7 @@ void ath_tx_edma_tasklet(struct ath_softc *sc)
 			{
 				struct timespec now;
 				getnstimeofday(&now);
-				last_ack = now;
+				this_ack = now;
 				get_ack_flag=1;
 				last_ack_update_flag=1;
 			}
@@ -2945,12 +2945,17 @@ void ath_tx_edma_tasklet(struct ath_softc *sc)
 				return;
 			}
 			struct timespec th;
+			int th_flag=0;
 			if(timespec_compare(&last_ack,&this_tw)<0)
+			{
 				th = this_tw;
+				th_flag=1;
+			}
 			else
 				th = last_ack;	
 			struct timespec p_delay = timespec_sub(this_ack,th);
 			struct timespec all_delay = timespec_sub(this_ack,this_tw);
+			//printk(KERN_DEBUG "p_delay %d.%d pnumber %d th use tw %d\n",p_delay.tv_sec,p_delay.tv_nsec,packet_number,th_flag);
 			update_deqrate(p_delay,all_delay,packet_size_all,packet_number);
 			last_ack_update_flag = 0;
 		}
