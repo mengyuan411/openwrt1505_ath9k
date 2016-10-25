@@ -40,12 +40,12 @@ struct timespec checktime_;
 long throughput_sum_ = 0;
 int alpha_ = 0; //%
 spinlock_t lock;
-int rate_avg_ = 0; //bits/us
+long long rate_avg_ = 0; //bits/s
 int delay_avg_ = 0;
-int switchOn_ = 0;
+int switchOn_ = 1;
 int delay_optimal_ = 2000;//us
 int fix_peak = 100000000; //bits/s
-int flow_peak = 100000000; // bits/s
+long long flow_peak = 100000000; // bits/s
 int beta_ = 100000; //bits/s
 int burst_size_ = 80000;// bits
 int deltaIncrease_ = 1000000; //bits/s
@@ -103,7 +103,7 @@ void update_bucket_contents()
 
 long long count_schedule_time(int len)
 {
-	long long delay = div64_s64((((long long)len * 8 - dsshaper_my.curr_bucket_contents) * 1000000),(long long) flow_peak) ; // bits / (bits/s /1000000)   = us
+	long long delay = div64_s64((((long long)len * 8 - dsshaper_my.curr_bucket_contents) * 1000000),flow_peak) ; // bits / (bits/s /1000000)   = us
 	if(delay == 0)
 		delay=100;
 	return delay;
@@ -153,7 +153,7 @@ enum hrtimer_restart resume(struct hrtimer *timer )
 
 void schedule_packet(int len)
 {
-	long long delay = div64_s64((((long long )len * 8 - dsshaper_my.curr_bucket_contents) * 1000000),(long long) flow_peak) ; //us
+	long long delay = div64_s64((((long long )len * 8 - dsshaper_my.curr_bucket_contents) * 1000000), flow_peak) ; //us
 	if(delay == 0)
 		delay=100;
 	ktime_t ktime;
@@ -249,6 +249,7 @@ void recv(int len, struct ath_softc* sc, struct ath_txq* txq, struct list_head p
 	//printk(KERN_EMERG "[mengy][recv]receive packet number :%ld \n",dsshaper_my.received_packets);
 	spin_lock_irq(&lock);
 	if (list_empty(&shape_queue)) 
+	//if(true)
 	{
 ///		  There are no packets being shapped. Tests profile.
 //		printk(KERN_EMERG "[mengy][recv]list is empty\n");
@@ -297,7 +298,7 @@ void update_deqrate(struct timespec p_delay,struct timespec all_delay, int pktsi
 	
 
 
-	int pri_peak_ = flow_peak;
+	long long pri_peak_ = flow_peak;
 	ntrans_ = ntrans_ + pnumber_;
 	//delay_sum_ += pdelay_;
 	delay_sum_ = timespec_add(delay_sum_,p_delay);
@@ -310,20 +311,20 @@ void update_deqrate(struct timespec p_delay,struct timespec all_delay, int pktsi
 		
 		
 		
-		rate_avg_ = pktsize_sum_ / (delay_sum_.tv_sec * 1000000 + delay_sum_.tv_nsec /1000) ; //bits/us
+		rate_avg_ = div64_s64(((long long)pktsize_sum_ * 1000000),(delay_sum_.tv_sec * 1000000 + delay_sum_.tv_nsec /1000)) ; //bits/us
 		if (switchOn_)
 		{
 			if( delay_avg_ > delay_optimal_ )
 			{
 				update_bucket_contents();
-				flow_peak = delay_optimal_ * pri_peak_ / delay_avg_; //unsettled
+				flow_peak = div64_s64(delay_optimal_ * pri_peak_,(long long)delay_avg_); //unsettled
 				if (flow_peak  < beta_)
 					flow_peak = beta_;
 			}else{
 				update_bucket_contents();
 				flow_peak =  pri_peak_ + deltaIncrease_;
-				if (flow_peak  > rate_avg_ * 1000000 )
-					flow_peak = rate_avg_ * 1000000 ;
+				if (flow_peak  > rate_avg_)
+					flow_peak = rate_avg_;
 			}
 		}else{
 			update_bucket_contents();
@@ -337,15 +338,15 @@ void update_deqrate(struct timespec p_delay,struct timespec all_delay, int pktsi
 		
 	}
 	//update_bucket_contents();	
-	//printk(KERN_EMERG "[mengy][update_deqrate after peak ][time=%ld.%ld][rate=%ld][delay_avg=%ld][pri_peak=%ld][now_peak_=%ld]\n",now_.tv_sec,now_.tv_nsec,rate_avg_,delay_avg_,pri_peak_,flow_peak);
+	printk(KERN_EMERG "[mengy][update_deqrate after peak ][rate=%lld][delay_avg=%lld][pri_peak=%lld][now_peak_=%lld]\n",rate_avg_,delay_avg_,pri_peak_,flow_peak);
 	
 	
 	
 	throughput_sum_ += pktsize_;
 	tmp_sub = timespec_sub(now_,checkThtime_);
 	if(  timespec_compare(&tmp_sub,&checkThInterval_)>0 ){
-		long long throughput_avg_ = ( 8 * throughput_sum_ ) * 1000 /(tmp_sub.tv_sec * 1000000 + tmp_sub.tv_nsec / 1000 );
-		//printk(KERN_DEBUG "[mengy][update_deqrate throughput][time=%ld.%ld][bytes=%ld][throughput=%ld Kbps]\n",now_.tv_sec,now_.tv_nsec,throughput_sum_,throughput_avg_);
+		long long throughput_avg_ = div64_s64((long long)( 8 * throughput_sum_ ) * 1000 ,(tmp_sub.tv_sec * 1000000 + tmp_sub.tv_nsec / 1000 ));
+		printk(KERN_DEBUG "[mengy][update_deqrate throughput][bytes=%ld][throughput=%lld Kbps]\n",throughput_sum_,throughput_avg_);
 		throughput_sum_ = 0;
 		checkThtime_ = now_;
 	}

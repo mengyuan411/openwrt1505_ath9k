@@ -1543,14 +1543,14 @@ static bool ath_tx_sched_aggr(struct ath_softc *sc, struct ath_txq *txq,
 	}
 
 	ath_tx_fill_desc(sc, bf, txq, aggr_len);
-	//ath_tx_txqaddbuf(sc, txq, &bf_q, false); //change by mengy for next
+//	ath_tx_txqaddbuf(sc, txq, &bf_q, false); //change by mengy for next
 	
 	//printk(KERN_DEBUG "call recv in ath_tx_sched_aggr\n");
 	if(pkt_type == 1)
 		recv(aggr_len, sc, txq, bf_q, false);// add by mengy
 	else
 		recv(burst_len, sc, txq, bf_q, false);// add by mengy
-
+	
 	return true;
 }
 
@@ -2177,9 +2177,9 @@ static void ath_tx_send_normal(struct ath_softc *sc, struct ath_txq *txq,
 	getnstimeofday(&tw);
 	skb->tstamp = timespec_to_ktime(tw);
 	//printk(KERN_DEBUG "call recv in ath_tx_send_normal");
-	//recv(fi->framelen, sc, txq, &bf_head, false);
+	recv(fi->framelen, sc, txq, bf_head, false);
 	//add end by mengy
-	ath_tx_txqaddbuf(sc, txq, &bf_head, false); // change for before
+	//ath_tx_txqaddbuf(sc, txq, &bf_head, false); // change for before
 	
 	TX_STAT_INC(txq->axq_qnum, queued);
 }
@@ -2951,7 +2951,7 @@ void ath_tx_edma_tasklet(struct ath_softc *sc)
 				th = last_ack;	
 			struct timespec p_delay = timespec_sub(this_ack,th);
 			struct timespec all_delay = timespec_sub(this_ack,this_tw);
-			//update_deqrate(p_delay,all_delay,packet_size_all,packet_number);
+			update_deqrate(p_delay,all_delay,packet_size_all,packet_number);
 			last_ack_update_flag = 0;
 		}
 			last_ack=this_ack;
