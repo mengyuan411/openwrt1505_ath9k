@@ -52,9 +52,10 @@ int deltaIncrease_ = 1000000; //bits/s
 struct timespec checkThInterval_ = {1,0};
 struct timespec checkThtime_ = {0};
 int shape_flag = 0;
+int restart_times = 0;
 struct hrtimer hr_timer;
 //extern void recv(int len, struct ath_softc *sc, struct ath_txq *txq, struct list_head *p, bool internal);
-int list_length(struct list_head *head);
+int list_length_one(struct list_head *head);
 void resume_test(void);
 int timer_module(int time_delay,struct timer_list *my_timer); // time_delay(ms)
 //void recv(int len, struct ath_softc *sc, struct ath_txq *txq, struct list_head *p, bool internal);
@@ -88,7 +89,7 @@ void update_bucket_contents()
 	long long added_bits = div64_s64(tmp_add * flow_peak ,(long long) 1000000) ; // us * bits/s / 1000000
 	//added_bits = 1000;
 	//tmp_number = 10;
-	printk(KERN_EMERG "[mengy][update_bucket_contents] add bits %lld\n",added_bits);
+	//printk(KERN_EMERG "[mengy][update_bucket_contents] add bits %lld\n",added_bits);
 	dsshaper_my.curr_bucket_contents =dsshaper_my.curr_bucket_contents +  added_bits;
 	if (dsshaper_my.curr_bucket_contents > dsshaper_my.burst_size_)
 		dsshaper_my.curr_bucket_contents=dsshaper_my.burst_size_ ; //unsettled how to update burst_size
@@ -113,7 +114,7 @@ enum hrtimer_restart resume(struct hrtimer *timer )
 	struct timespec now;
 	getnstimeofday(&now);
 	//printk(KERN_EMERG "[mengy][resume]resume after time:%ld.%ld\n",now.tv_sec,now.tv_nsec);
-	
+	int resume_count = 0;
 	struct packet_msg *packet_resume;
 	//struct packet_dsshaper *packet_dsshaper_resume;
 	//struct list_head *lh_packet_resume;
@@ -121,7 +122,8 @@ enum hrtimer_restart resume(struct hrtimer *timer )
 	while (!list_empty(&shape_queue))
 	{
 		packet_resume = list_entry(shape_queue.next,struct packet_msg,list);
-
+		resume_count++;
+		//printk(KERN_EMERG "[mengy][resume]while count %ld\n",resume_count);
 		if (in_profile(packet_resume->len)) 
 		{
 			dsshaper_my.sent_packets++;
@@ -137,11 +139,14 @@ enum hrtimer_restart resume(struct hrtimer *timer )
 			ktime_t ktime;
 			ktime = ktime_set( 0,delay*1000);//100us
 			getnstimeofday(&now);
-			printk(KERN_EMERG "[mengy][resume]restart the packet resume for %lldus time:%ld.%ld\n",delay,now.tv_sec,now.tv_nsec);
+			restart_times++;
+			//if(restart_times%500==1)
+			//printk(KERN_EMERG "[mengy][resume]restart the packet resume for %lldus restart times %d\n",delay,restart_times);
 			hrtimer_forward_now(&hr_timer,ktime);
 			return HRTIMER_RESTART;
 		} 
 	}
+		restart_times=0;
 		//printk(KERN_EMERG "[mengy][resume]stop the timer\n");
 		return HRTIMER_NORESTART;
 } 
@@ -157,22 +162,22 @@ void schedule_packet(int len)
 	hr_timer.function = &resume;
 	struct timespec now;
 	getnstimeofday(&now);
-	printk(KERN_EMERG "[mengy][schedule_packet]schedule the packet begin for %lldus time:%ld.%ld\n",delay,now.tv_sec,now.tv_nsec);
+	//printk(KERN_EMERG "[mengy][schedule_packet]schedule the packet begin for %lldus time:%ld.%ld\n",delay,now.tv_sec,now.tv_nsec);
 	hrtimer_start( &hr_timer, ktime, HRTIMER_MODE_REL );
 	return;
 }
 
 bool shape_packet(struct list_head packet,struct ath_softc *sc, struct ath_txq *txq,bool internal,int len,int schedule_flag)
 {
-/*
-	if (list_length(&shape_queue) >= 2) {
+
+	//if (list_length(&shape_queue) >= 2) {
 			//drop (p);// unsettled how to drop?
 			//printk(KERN_DEBUG "[mengy][shape_packet]shape the packet fails over queue length\n");
-			dsshaper_my.dropped_packets++;
-			//printk(KERN_DEBUG "[mengy][shape_packet] drop the packets %ld\n",dsshaper_my.dropped_packets);
-			return false;
-		} 
-*/
+//			dsshaper_my.dropped_packets++;
+			//printk(KERN_DEBUG "[mengy][shape_packet]q list: %ld\n",list_length(&shape_queue));
+			//return false;
+	//	} 
+
 		struct packet_msg *my_packet;
 		my_packet = kzalloc(sizeof(struct packet_msg),GFP_KERNEL);
 		INIT_LIST_HEAD(&my_packet->list);//unsettled
@@ -186,8 +191,11 @@ bool shape_packet(struct list_head packet,struct ath_softc *sc, struct ath_txq *
 
 		dsshaper_my.shaped_packets++;
 		//printk(KERN_EMERG "[mengy][shape_packet]shape the packe shape number:%ld\n",dsshaper_my.shaped_packets);
+		//printk(KERN_DEBUG "[mengy][shape_packet]q list: %ld shedule_flag %ld\n",list_length_one(&shape_queue),schedule_flag);
+		//if(list_length_one(&shape_queue))
 		if(schedule_flag ==1)
-			schedule_packet(len);
+				schedule_packet(len);
+			
 	return true;
 }
 
@@ -239,17 +247,19 @@ void recv(int len, struct ath_softc* sc, struct ath_txq* txq, struct list_head p
 	}				
 	dsshaper_my.received_packets++;
 	//printk(KERN_EMERG "[mengy][recv]receive packet number :%ld \n",dsshaper_my.received_packets);
-
+	spin_lock_irq(&lock);
 	if (list_empty(&shape_queue)) 
 	{
 ///		  There are no packets being shapped. Tests profile.
+//		printk(KERN_EMERG "[mengy][recv]list is empty\n");
 		if (in_profile(len)) 
 	//	if(true)
 		{ 	
-			//spin_unlock_bh(&lock);		
+			spin_unlock_irq(&lock);		
 			dsshaper_my.sent_packets++;
 			//printk(KERN_EMERG "[mengy][recv]sent the packet number:%ld\n",dsshaper_my.sent_packets);
 			ath_tx_txqaddbuf(sc, txq, &p, internal);
+			return;
 		} 
 		else
 		{
@@ -265,6 +275,7 @@ void recv(int len, struct ath_softc* sc, struct ath_txq* txq, struct list_head p
 			//printk(KERN_EMERG "[mengy][recv]just add buffer queue\n");
 		 //ath_tx_txqaddbuf(sc, txq, p, internal); 
 	}
+	spin_unlock_irq(&lock);
 }
 
 void update_deqrate(struct timespec p_delay,struct timespec all_delay, int pktsize_, int pnumber_)
@@ -334,28 +345,26 @@ void update_deqrate(struct timespec p_delay,struct timespec all_delay, int pktsi
 	tmp_sub = timespec_sub(now_,checkThtime_);
 	if(  timespec_compare(&tmp_sub,&checkThInterval_)>0 ){
 		long long throughput_avg_ = ( 8 * throughput_sum_ ) * 1000 /(tmp_sub.tv_sec * 1000000 + tmp_sub.tv_nsec / 1000 );
-		printk(KERN_DEBUG "[mengy][update_deqrate throughput][time=%ld.%ld][bytes=%ld][throughput=%ld Kbps]\n",now_.tv_sec,now_.tv_nsec,throughput_sum_,throughput_avg_);
+		//printk(KERN_DEBUG "[mengy][update_deqrate throughput][time=%ld.%ld][bytes=%ld][throughput=%ld Kbps]\n",now_.tv_sec,now_.tv_nsec,throughput_sum_,throughput_avg_);
 		throughput_sum_ = 0;
 		checkThtime_ = now_;
 	}
 }
 
-int list_length(struct list_head *head)
+int list_length_one(struct list_head *head)
 {
 	if(list_empty(head)){
 		return 0;
 	}
-	int count = 0;
-	struct list_head *p;
-	p = head->next;
-	while(p){
-		count++;
-		if(list_is_last(p,head)){
-			return count;
-		}
-		p = p->next;
-
-	}
+	//int count = 0;
+	//struct list_head *p;
+	//p = head->next;
+	//while(p){
+	//	count++;
+	if(list_is_last(head->next,head))
+			return 1;
+	else
+		return 0;
 
 }
 /*
