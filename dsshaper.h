@@ -17,11 +17,12 @@
 
 #include <linux/timer.h> //for timer mengy
 #include <linux/time.h>
-#include <linux/types.h>
+//#include <linux/types.h>
 #include <linux/math64.h>
+#include <linux/sysctl.h>
 //#include <linux/hw_random.h>
 #include <net/mac80211.h>
-#include <linux/types.h>
+//#include <sys/types.h>
 #include "ath9k.h"
 
 
@@ -37,6 +38,14 @@ extern long long flow_peak ; // bits/s
 
 #ifndef ATH9K_DSSHAPPER_H
 #define ATH9K_DSSHAPPER_H
+
+/*add for sysctl*/
+#define MY_ROOT (CTL_CPU + 10)
+#define MY_MAX_SIZE 256
+enum {
+        MY_INT_EXAM = 1,
+	MY_STRING_EXAM = 2,
+};
 
 void update_deqrate(struct timespec p_delay,struct timespec all_delay, int pktsize_, int pnumber_);
 extern void update_bucket_contents(void);

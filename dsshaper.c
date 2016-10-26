@@ -25,6 +25,10 @@
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/spinlock_types.h>
+
+#include <linux/types.h> 
+#include <linux/sysctl.h>
+
 /*for timestamp te th tw by mengy*/
 #define MS_TO_NS(x)	(x * 1E6L)
  
@@ -42,7 +46,8 @@ int alpha_ = 0; //%
 spinlock_t lock;
 long long rate_avg_ = 0; //bits/s
 int delay_avg_ = 0;
-int switchOn_ = 1;
+static int switchOn_ = 1;
+//SYSCTL_INT( _net, OID_AUTO, fixpeak, CTLFLAG_RW, &switchOn_, 1, "whether to set the fix peak");
 int delay_optimal_ = 2000;//us
 int fix_peak = 100000000; //bits/s
 long long flow_peak = 100000000; // bits/s
@@ -70,7 +75,47 @@ int init_flag = 0; //for the initialize
 struct list_head shape_queue; //for the packet queue
 //struct list_head shape_queue_msg; // for the packet queue msg
 
+/*add for sysctl*/
+static char mystring[256];
+static int myint;
+static struct ctl_table my_sysctl_exam[] = {
+        {
+                .procname       = "myint",
+                .data           = &myint,
+                .maxlen         = sizeof(int),
+                .mode           = 0666,
+                .proc_handler   = &proc_dointvec,
+        },
+        {
+                .procname       = "mystring",
+                .data           = mystring,
+                .maxlen         = MY_MAX_SIZE,
+                .mode           = 0666,
+                .proc_handler   = &proc_dostring,
+        },
+        {
+        }
+};
 
+static struct ctl_table my_root = {
+        .procname       = "mysysctl",
+        .mode           = 0555,
+        .child          = my_sysctl_exam,
+};
+
+static struct ctl_table_header * my_ctl_header;
+
+static int __init sysctl_exam_init(void)
+{
+        my_ctl_header = register_sysctl_table(&my_root);
+
+        return 0;
+}
+
+static void __exit sysctl_exam_exit(void)
+{
+        unregister_sysctl_table(my_ctl_header);
+}
 
 
 void update_bucket_contents()
@@ -233,6 +278,7 @@ void recv(int len, struct ath_softc* sc, struct ath_txq* txq, struct list_head p
 	if(init_flag == 0){
 		INIT_LIST_HEAD(&shape_queue);
 		//INIT_LIST_HEAD(&shape_queue_msg);
+		sysctl_exam_init();
 		struct timespec now;
 		getnstimeofday(&now);
 		spin_lock_init(&lock);
@@ -294,6 +340,7 @@ void update_deqrate(struct timespec p_delay,struct timespec all_delay, int pktsi
 		spin_lock_init(&lock);
 		dsshaper_my.last_time = now;		
 		init_flag=1;
+		sysctl_exam_init();
 	}	
 	
 
