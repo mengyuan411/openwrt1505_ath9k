@@ -112,6 +112,7 @@ int packet_number = 0;
 int packet_size_all = 0;
 int ack_has_real_packet=0;
 int last_ack_update_flag = 0;
+int first_call_flag = 1;
 struct timespec this_ack = {0};
 struct timespec this_tw = {0};
 //add end by mengy
@@ -2865,7 +2866,7 @@ void ath_tx_edma_tasklet(struct ath_softc *sc)
 				getnstimeofday(&now);
 				this_ack = now;
 				get_ack_flag=1;
-				last_ack_update_flag=1;
+				update_te_flag = 1;
 			}
 			has_beacon_flag=1;
 			// add end by mengy
@@ -2927,7 +2928,7 @@ void ath_tx_edma_tasklet(struct ath_softc *sc)
 		ath_txq_unlock_complete(sc, txq);
 	}
 		// call update peak by mengy
-		if (!has_beacon_flag && ack_has_real_packet==1)
+		if (!has_beacon_flag && ack_has_real_packet==1 && first_call_flag ==0)
 		{
 			if(update_te_flag == 0)
 			{
@@ -2970,6 +2971,7 @@ void ath_tx_edma_tasklet(struct ath_softc *sc)
 			this_ack.tv_nsec = 0;
 			this_tw.tv_sec = 0;
 			this_tw.tv_nsec = 0;
+			first_call_flag=0;
 }
 
 /*****************/
