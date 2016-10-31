@@ -49,7 +49,7 @@ int delay_avg_ = 0;
 static int switchOn_ = 1;
 //SYSCTL_INT( _net, OID_AUTO, fixpeak, CTLFLAG_RW, &switchOn_, 1, "whether to set the fix peak");
 int delay_optimal_ = 2000;//us
-int fix_peak = 100000000; //bits/s
+int fix_peak = 90000000; //bits/s
 long long flow_peak = 100000000; // bits/s
 int beta_ = 100000; //bits/s
 int burst_size_ = 80000;// bits
@@ -92,6 +92,55 @@ static struct ctl_table my_sysctl_exam[] = {
                 .maxlen         = MY_MAX_SIZE,
                 .mode           = 0666,
                 .proc_handler   = &proc_dostring,
+        },
+        {
+                .procname       = "switchOn",
+                .data           = &switchOn_,
+                .maxlen         = sizeof(int),
+                .mode           = 0666,
+                .proc_handler   = &proc_dointvec,
+        },
+        {
+                .procname       = "delay_optimal",
+                .data           = &delay_optimal_,
+                .maxlen         = sizeof(int),
+                .mode           = 0666,
+                .proc_handler   = &proc_dointvec,
+        },
+        {
+                .procname       = "alpha",
+                .data           = &alpha_,
+                .maxlen         = sizeof(int),
+                .mode           = 0666,
+                .proc_handler   = &proc_dointvec,
+        },
+        {
+                .procname       = "beta",
+                .data           = &beta_,
+                .maxlen         = sizeof(int),
+                .mode           = 0666,
+                .proc_handler   = &proc_dointvec,
+        },
+        {
+                .procname       = "fix_peak",
+                .data           = &fix_peak,
+                .maxlen         = sizeof(int),
+                .mode           = 0666,
+                .proc_handler   = &proc_dointvec,
+        },
+        {
+                .procname       = "burstsize",
+                .data           = &burst_size_,
+                .maxlen         = sizeof(int),
+                .mode           = 0666,
+                .proc_handler   = &proc_dointvec,
+        },
+        {
+                .procname       = "deltaIncrease",
+                .data           = &deltaIncrease_,
+                .maxlen         = sizeof(int),
+                .mode           = 0666,
+                .proc_handler   = &proc_dointvec,
         },
         {
         }
@@ -341,6 +390,11 @@ void update_deqrate(struct timespec p_delay,struct timespec all_delay, int pktsi
 		dsshaper_my.last_time = now;		
 		init_flag=1;
 		sysctl_exam_init();
+		if(switchOn_ == 0){
+			printk(KERN_EMERG "[chpei] The congestion control algorithm is disabled!\n");
+		}else{
+			printk(KERN_EMERG "[chpei] The congestion control algorithm is enabled!\n");
+		}
 	}	
 	
 
@@ -425,134 +479,6 @@ int list_length_one(struct list_head *head)
 		return 0;
 
 }
-/*
-int timer_module(int time_delay,struct timer_list *my_timer)
-{
-  int ret;
-
-  //printk("Timer module installing\n");
-
-  // my_timer.function, my_timer.data
-  setup_timer( my_timer,resume, 0 );
-
-  //printk( "Starting timer to fire in %ld ms (%ld)\n", time_delay,jiffies );
-  ret = mod_timer(my_timer, jiffies + msecs_to_jiffies(time_delay) );
-  if (ret) printk("Error in mod_timer\n");
-
-  return 0;
-}
-/*
-enum hrtimer_restart my_hrtimer_callback( struct hrtimer *timer )
-{
-  struct timespec now;
-  getnstimeofday(&now);
-  printk(KERN_DEBUG "[mengy][schedule_packet]schedule the packet resume for 1ms time:%ld.%ld\n",now.tv_sec,now.tv_nsec);
-  //printk(KERN_DEBUG "my_hrtimer_callback called (%ld).\n", jiffies );
-  int ret;
-  shape_flag=0;
-  //ret = hrtimer_cancel(&hr_timer );
-  //if (ret) printk(KERN_DEBUG "The timer was still in use...\n");
-
-  //printk(KERN_DEBUG "HR Timer module uninstalling\n");
-  //shape_flag=0;
-  return HRTIMER_NORESTART;
-}*/
-//struct hrtimer hr_timer;
-/*
-void resume_test(void)
-{
-	
-	struct timespec now;
-	getnstimeofday(&now);
-	printk(KERN_DEBUG "[mengy][schedule_packet]schedule the packet resume test:%ld.%ld\n",now.tv_sec,now.tv_nsec);
-	//return;
-	//spinlock_t lock;
-	//spin_lock_init(&lock); 
-	
-	spin_lock_bh(&lock);
-	struct packet_msg *msg_resume;
-	struct packet_dsshaper *packet_dsshaper_resume;
-	struct list_head *lh_msg_resume;
-	struct list_head *lh_p_resume;
-	if (!list_empty(&shape_queue))
-	{
-
-		lh_p_resume = shape_queue.next;
-		lh_msg_resume = shape_queue_msg.next;
-		msg_resume = list_entry(lh_msg_resume,struct packet_msg,list);
-		packet_dsshaper_resume = list_entry(lh_p_resume,struct packet_dsshaper,list);
-		//printk(KERN_DEBUG "[mengy][resume]resume the packet length:%ld\n",msg_resume->len);
-		ath_tx_txqaddbuf(msg_resume->sc, msg_resume->txq, packet_dsshaper_resume->packet, msg_resume->internal);
-				printk(KERN_DEBUG "[mengy][resume]sent the packet number:%ld\n",dsshaper_my.sent_packets);
-			list_del(lh_p_resume);
-				list_del(lh_msg_resume);
-				kfree(msg_resume);
-				kfree(packet_dsshaper_resume);
-		spin_unlock_bh(&lock);
-		return;
-	}
-	else
-	{
-		printk(KERN_DEBUG "[mengy][Error	 ][the queue is empty!]\n");
-		spin_unlock_bh(&lock);
-		return;
-	}
-
-	//struct hdr_cmn *hdr = hdr_cmn::access(p);
-	//printf("[changhua pei][TC-resume ][%d->%d][id=%d][type=%d][time=%f][eqts_=%f][holts_=%f][wait_time_=%f][retrycnt=%d]\n",hdr->prev_hop_,hdr->next_hop_,hdr->uid_,hdr->ptype_,Scheduler::instance().clock(),hdr->eqts_,hdr->holts_,hdr->holts_-hdr->eqts_,hdr->retrycnt_);
-	
-if (in_profile(msg_resume->len)) {
-	//if(true){
-		dsshaper_my.sent_packets++;
-		ath_tx_txqaddbuf(msg_resume->sc, msg_resume->txq, packet_dsshaper_resume->packet, msg_resume->internal);
-		printk(KERN_DEBUG "[mengy][resume]sent the packet number:%ld\n",dsshaper_my.sent_packets);
-		list_del(lh_p_resume);
-		list_del(lh_msg_resume);
-		kfree(msg_resume);
-		kfree(packet_dsshaper_resume);
-	//	spin_unlock_bh(&lock);
-	//	shape_flag =0;
-		//return HRTIMER_NORESTART;
-			//target_->recv(p,(Handler*) NULL);  //unsettled why recv? 
-
-	}
-else {
-		//printf("[changhua pei][TC-resume0][%d->%d][id=%d][puid_=%d][schedule until the packet is sent out!]\n",hdr->prev_hop_,hdr->next_hop_,hdr->uid_, p->uid_);
-			//printk(KERN_DEBUG "[mengy][resume]resume and schedule the packet length:%ld\n",msg_resume->len);
-		spin_unlock_bh(&lock);
-		schedule_packet(packet_dsshaper_resume->packet,msg_resume->len);
-		//spin_unlock_bh(&lock);
-		return;
-	} 
-
-	if (!list_empty(&shape_queue)) {  //why don't check the bucket again?
-//		 There are packets in the queue. Schedule the first one.
-		   //Packet *first_p = shape_queue.lookup(0);
-		   
-		   //Scheduler& s = Scheduler::instance();
-		   //s.schedule(&sh_, first_p, 0);
-		//printk(KERN_DEBUG "[mengy][resume]sent success and schedule again\n");   
-		//struct timer_list my_timer;  
-		//timer_module(1,&my_timer); 
-			lh_p_resume = shape_queue.next;
-			lh_msg_resume = shape_queue_msg.next;
-			msg_resume = list_entry(lh_msg_resume,struct packet_msg,list);
-			packet_dsshaper_resume = list_entry(lh_p_resume,struct packet_dsshaper,list);
-			schedule_packet(packet_dsshaper_resume->packet,msg_resume->len);
-				//printk(KERN_DEBUG "[mengy][resume]resume the packet length:%ld\n",msg_resume->len);   
-	 	//dsshaper_my.sent_packets++;
-				//printk(KERN_DEBUG "[mengy][resume]resume and sent the packet length:%ld\n",msg_resume->len);
-				//printk(KERN_DEBUG "[mengy][schedule_packet]schedule the packet resume for 1ms time:%ld.%ld\n",now.tv_sec,now.tv_nsec);
-				//ath_tx_txqaddbuf(msg_resume->sc, msg_resume->txq, packet_dsshaper_resume->packet, msg_resume->internal);
-				//list_del(lh_p_resume);
-				//list_del(lh_msg_resume);
-				//kfree(msg_resume);
-				//kfree(packet_dsshaper_resume);
-			spin_unlock_bh(&lock);
-		// schedule_packet(packet,len,my_packet->hr_timer);
-	}  
-	 return HRTIMER_NORESTART;
-} */
 
 
 
