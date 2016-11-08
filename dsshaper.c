@@ -39,26 +39,35 @@ int schedule_packet_number =0;
 int ntrans_ = 0;
 struct timespec delay_sum_ = {0};
 int pktsize_sum_ = 0;
-struct timespec checkInterval_ = {0,5000000};
-struct timespec checktime_;
 long throughput_sum_ = 0;
-int alpha_ = 0; //%
+
+struct timespec checktime_;
+int shape_flag = 0;
+int restart_times = 0;
+
+struct hrtimer hr_timer;
 spinlock_t lock;
-long long rate_avg_ = 0; //bits/s
-int delay_avg_ = 0;
-static int switchOn_ = 1;
+
 //SYSCTL_INT( _net, OID_AUTO, fixpeak, CTLFLAG_RW, &switchOn_, 1, "whether to set the fix peak");
 int delay_optimal_ = 2000;//us
+int delay_instant_ = 0;
+int delay_avg_ = 0;
+long long rate_avg_ = 0; //bits/s
+int rate_avg_print = 0; //bits/s
+
 int fix_peak = 90000000; //bits/s
 long long flow_peak = 100000000; // bits/s
+int flow_peak_print = 100000000; // bits/s
+
+static int switchOn_ = 1;
+int alpha_ = 0; //%
 int beta_ = 100000; //bits/s
 int burst_size_ = 80000;// bits
 int deltaIncrease_ = 1000000; //bits/s
 struct timespec checkThInterval_ = {1,0};
+struct timespec checkInterval_ = {0,5000000};
 struct timespec checkThtime_ = {0};
-int shape_flag = 0;
-int restart_times = 0;
-struct hrtimer hr_timer;
+
 //extern void recv(int len, struct ath_softc *sc, struct ath_txq *txq, struct list_head *p, bool internal);
 int list_length_one(struct list_head *head);
 void resume_test(void);
@@ -79,13 +88,6 @@ struct list_head shape_queue; //for the packet queue
 static char mystring[256];
 static int myint;
 static struct ctl_table my_sysctl_exam[] = {
-        {
-                .procname       = "myint",
-                .data           = &myint,
-                .maxlen         = sizeof(int),
-                .mode           = 0666,
-                .proc_handler   = &proc_dointvec,
-        },
         {
                 .procname       = "mystring",
                 .data           = mystring,
@@ -108,6 +110,27 @@ static struct ctl_table my_sysctl_exam[] = {
                 .proc_handler   = &proc_dointvec,
         },
         {
+                .procname       = "delay_instant",
+                .data           = &delay_instant_,
+                .maxlen         = sizeof(int),
+                .mode           = 0666,
+                .proc_handler   = &proc_dointvec,
+        },
+        {
+                .procname       = "delay_avg",
+                .data           = &delay_avg_,
+                .maxlen         = sizeof(int),
+                .mode           = 0666,
+                .proc_handler   = &proc_dointvec,
+        },
+        {
+                .procname       = "rate_avg_print",
+                .data           = &rate_avg_print,
+                .maxlen         = sizeof(int),
+                .mode           = 0666,
+                .proc_handler   = &proc_dointvec,
+        },
+        {
                 .procname       = "alpha",
                 .data           = &alpha_,
                 .maxlen         = sizeof(int),
@@ -124,6 +147,13 @@ static struct ctl_table my_sysctl_exam[] = {
         {
                 .procname       = "fix_peak",
                 .data           = &fix_peak,
+                .maxlen         = sizeof(int),
+                .mode           = 0666,
+                .proc_handler   = &proc_dointvec,
+        },
+        {
+                .procname       = "flow_peak_print",
+                .data           = &flow_peak_print,
                 .maxlen         = sizeof(int),
                 .mode           = 0666,
                 .proc_handler   = &proc_dointvec,
@@ -165,19 +195,18 @@ static void __exit sysctl_exam_exit(void)
 {
         unregister_sysctl_table(my_ctl_header);
 }
-
 void timestamp_tw_for_each_skb(struct list_head* head)
-{
-	struct timespec tw;
-        getnstimeofday(&tw);
-	
-	struct ath_buf *bf;
-	list_for_each_entry(bf,head,list)
-	{
-		struct sk_buff *skb = bf->bf_mpdu;
-		skb->tstamp = timespec_to_ktime(tw);	
-	}
-}
+ {
+ 	struct timespec tw;
+         getnstimeofday(&tw);
+ 	
+ 	struct ath_buf *bf;
+ 	list_for_each_entry(bf,head,list)
+ 	{
+ 		struct sk_buff *skb = bf->bf_mpdu;
+ 		skb->tstamp = timespec_to_ktime(tw);	
+ 	}
+ }
 
 void update_bucket_contents()
 {
@@ -366,8 +395,8 @@ void recv(int len, struct ath_softc* sc, struct ath_txq* txq, struct list_head p
 		{ 	
 			spin_unlock_irq(&lock);		
 			dsshaper_my.sent_packets++;
-			timestamp_tw_for_each_skb(&p);
 			//printk(KERN_EMERG "[mengy][recv]sent the packet number:%ld\n",dsshaper_my.sent_packets);
+			timestamp_tw_for_each_skb(&p);
 			ath_tx_txqaddbuf(sc, txq, &p, internal);
 			return;
 		} 
@@ -425,7 +454,7 @@ void update_deqrate(struct timespec p_delay,struct timespec all_delay, int pktsi
 	struct timespec tmp_sub = timespec_sub(now_, checktime_); // unsettled checktime_
 	if( timespec_compare(&tmp_sub,&checkInterval_) >0 ){
 		//printk(KERN_DEBUG "pdelay:%ld.%ld,pktsize_:%ld,pnumber_:%ld,ntrans_:%ld,delay_sum:%ld.%ld\n",p_delay.tv_sec,p_delay.tv_nsec,pktsize_,pnumber_,ntrans_,delay_sum_.tv_sec,delay_sum_.tv_nsec);
-		int delay_instant_;
+	//	int delay_instant_; // comment by changhuapei
 		//int tmpus = delay_sum_.tv_sec * 1000000 + delay_sum_.tv_nsec/1000;
 		//int tmpdelay = tmpus / ntrans_;
 		//printk(KERN_EMERG "[mengy][update_deqrate after peak ][tmpus=%ld][delay_instant=%ld][ntrans=%ld][delay_sum=%ld.%ld]\n",tmpus,tmpdelay,ntrans_,delay_sum_.tv_sec,delay_sum_.tv_nsec);
@@ -436,20 +465,23 @@ void update_deqrate(struct timespec p_delay,struct timespec all_delay, int pktsi
 
 		
 		
-		rate_avg_ = div64_s64(((long long)pktsize_sum_ * 1000000),(delay_sum_.tv_sec * 1000000 + delay_sum_.tv_nsec /1000)) ; //bits/us
+		rate_avg_ = div64_s64(((long long)pktsize_sum_ * 1000000),(delay_sum_.tv_sec * 1000000 + delay_sum_.tv_nsec /1000)) ; //bits/s
+		rate_avg_print = (int)rate_avg_;
 		if (switchOn_)
 		{
-			if( delay_avg_ > delay_optimal_ )
+			if( delay_avg_ > delay_optimal_ )// delay_optimal must be in microseconds, ie, us
 			{
 				update_bucket_contents();
-				flow_peak = div64_s64(delay_optimal_ * pri_peak_,(long long)delay_avg_); //unsettled
+				flow_peak = div64_s64(delay_optimal_ * pri_peak_,(long long)delay_avg_); //bits/us
+				flow_peak_print = (int)flow_peak;
 				if (flow_peak  < beta_)
 					flow_peak = beta_;
 			}else{
 				update_bucket_contents();
 				flow_peak =  pri_peak_ + deltaIncrease_;
-				if (flow_peak  > rate_avg_)
-					flow_peak = rate_avg_;
+				flow_peak_print = (int)flow_peak;
+				if (flow_peak  > fix_peak)
+					flow_peak = fix_peak;
 			}
 		}else{
 			update_bucket_contents();
@@ -463,7 +495,7 @@ void update_deqrate(struct timespec p_delay,struct timespec all_delay, int pktsi
 		
 	}
 	//update_bucket_contents();	
-	printk(KERN_EMERG "[mengy][update_deqrate after peak ][rate=%lld][delay_avg=%ld][pri_peak=%lld][now_peak_=%lld]\n",rate_avg_,delay_avg_,pri_peak_,flow_peak);
+	//printk(KERN_EMERG "[mengy][update_deqrate after peak ][rate=%lld][delay_avg=%ld][pri_peak=%lld][now_peak_=%lld]\n",rate_avg_,delay_avg_,pri_peak_,flow_peak);
 	
 	
 	
@@ -471,7 +503,7 @@ void update_deqrate(struct timespec p_delay,struct timespec all_delay, int pktsi
 	tmp_sub = timespec_sub(now_,checkThtime_);
 	if(  timespec_compare(&tmp_sub,&checkThInterval_)>0 ){
 		long long throughput_avg_ = div64_s64((long long)( 8 * throughput_sum_ ) * 1000 ,(tmp_sub.tv_sec * 1000000 + tmp_sub.tv_nsec / 1000 ));
-		printk(KERN_DEBUG "[mengy][update_deqrate throughput][bytes=%ld][throughput=%lld Kbps]\n",throughput_sum_,throughput_avg_);
+		//printk(KERN_DEBUG "[mengy][update_deqrate throughput][bytes=%ld][throughput=%lld Kbps]\n",throughput_sum_,throughput_avg_);
 		throughput_sum_ = 0;
 		checkThtime_ = now_;
 	}
@@ -493,4 +525,6 @@ int list_length_one(struct list_head *head)
 		return 0;
 
 }
+
+
 
