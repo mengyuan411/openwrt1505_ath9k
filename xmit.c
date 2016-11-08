@@ -2927,6 +2927,24 @@ void ath_tx_edma_tasklet(struct ath_softc *sc)
 		ath_tx_process_buffer(sc, txq, &ts, bf, &bf_head);
 		ath_txq_unlock_complete(sc, txq);
 	}
+		//change for journal measure te-tw avg by mengy
+		if (!has_beacon_flag && ack_has_real_packet==1 && update_tw_flag==1 && update_te_flag==1)
+		{
+			struct timespec delayall = timespec_sub(this_ack,this_tw);
+			int delayavg = (delayall.tv_sec * 1000000 + delayall.tv_nsec/1000) / packet_number;
+			printk(KERN_DEBUG "ath_tx_edma_tasklet;mengy;%ld;%ld;%d;%ld\n",delayall.tv_sec,delayall.tv_nsec,delayavg,packet_number);
+		}
+		update_te_flag = 0;
+		update_tw_flag = 0;
+		has_beacon_flag = 0;
+		packet_number = 0;
+		this_ack.tv_sec =0;
+		this_ack.tv_nsec = 0;
+		this_tw.tv_sec = 0;
+		this_tw.tv_nsec = 0;
+		first_call_flag=0;
+		ack_has_real_packet=0;
+		/*
 		// call update peak by mengy
 		if (!has_beacon_flag && ack_has_real_packet==1 && first_call_flag ==0)
 		{
@@ -2972,6 +2990,7 @@ void ath_tx_edma_tasklet(struct ath_softc *sc)
 			this_tw.tv_sec = 0;
 			this_tw.tv_nsec = 0;
 			first_call_flag=0;
+		*/
 }
 
 /*****************/

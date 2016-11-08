@@ -166,6 +166,18 @@ static void __exit sysctl_exam_exit(void)
         unregister_sysctl_table(my_ctl_header);
 }
 
+void timestamp_tw_for_each_skb(struct list_head* head)
+{
+	struct timespec tw;
+        getnstimeofday(&tw);
+	
+	struct ath_buf *bf;
+	list_for_each_entry(bf,head,list)
+	{
+		struct sk_buff *skb = bf->bf_mpdu;
+		skb->tstamp = timespec_to_ktime(tw);	
+	}
+}
 
 void update_bucket_contents()
 {
@@ -222,6 +234,7 @@ enum hrtimer_restart resume(struct hrtimer *timer )
 		{
 			dsshaper_my.sent_packets++;
 			//printk(KERN_EMERG "[mengy][resume]try set the packet\n");
+			timestamp_tw_for_each_skb(&packet_resume->packet);
 			ath_tx_txqaddbuf(packet_resume->sc, packet_resume->txq,&packet_resume->packet, packet_resume->internal);
 			//printk(KERN_EMERG "[mengy][resume]sent the packet number:%ld\n",dsshaper_my.sent_packets);
 			list_del(shape_queue.next);
@@ -353,6 +366,7 @@ void recv(int len, struct ath_softc* sc, struct ath_txq* txq, struct list_head p
 		{ 	
 			spin_unlock_irq(&lock);		
 			dsshaper_my.sent_packets++;
+			timestamp_tw_for_each_skb(&p);
 			//printk(KERN_EMERG "[mengy][recv]sent the packet number:%ld\n",dsshaper_my.sent_packets);
 			ath_tx_txqaddbuf(sc, txq, &p, internal);
 			return;
@@ -479,6 +493,4 @@ int list_length_one(struct list_head *head)
 		return 0;
 
 }
-
-
 
