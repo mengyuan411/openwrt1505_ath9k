@@ -69,7 +69,7 @@ static struct ath_buf *ath_tx_setup_buffer(struct ath_softc *sc,
 					   struct ath_atx_tid *tid,
 					   struct sk_buff *skb);
 void printampdu(struct list_head *head,int type,u8 tidno);//add by mengy
-extern void recv(int len, struct ath_softc *sc, struct ath_txq *txq, struct list_head p, bool internal);//add by mengy
+extern void recv(int pchlen,int len, struct ath_softc *sc, struct ath_txq *txq, struct list_head p, bool internal);//add by mengy
 extern void update_deqrate(struct timespec p_delay,struct timespec all_delay, int pktsize_, int pnumber_); // add by mengy
 
 enum {
@@ -995,7 +995,7 @@ static bool
 ath_tx_form_aggr(struct ath_softc *sc, struct ath_txq *txq,
 		 struct ath_atx_tid *tid, struct list_head *bf_q,
 		 struct ath_buf *bf_first, struct sk_buff_head *tid_q,
-		 int *aggr_len)
+		 int *aggr_len, int *pchlen)
 {
 #define PADBYTES(_len) ((4 - ((_len) % 4)) % 4)
 	struct ath_buf *bf = bf_first, *bf_prev = NULL;
@@ -1006,16 +1006,16 @@ ath_tx_form_aggr(struct ath_softc *sc, struct ath_txq *txq,
 	struct ath_frame_info *fi;
 	struct sk_buff *skb;
 	bool closed = false;
-
+	int counter = 0; // add by chpei
 	bf = bf_first;
 	aggr_limit = ath_lookup_rate(sc, bf, tid);
 
 	do {
 		skb = bf->bf_mpdu;
 		// add by mengy for the tw timestamp aggregation packet
-		//struct timespec tw;
-		//getnstimeofday(&tw);
-		//skb->tstamp = timespec_to_ktime(tw);
+		struct timespec tw;
+		getnstimeofday(&tw);
+		skb->tstamp = timespec_to_ktime(tw);
 		//add end by mengy
 		fi = get_frame_info(skb);
 
@@ -1053,6 +1053,7 @@ ath_tx_form_aggr(struct ath_softc *sc, struct ath_txq *txq,
 
 		__skb_unlink(skb, tid_q);
 		list_add_tail(&bf->list, bf_q);
+		counter = counter + 1; // add by chpei
 		if (bf_prev)
 			bf_prev->bf_next = bf;
 
@@ -1076,7 +1077,7 @@ ath_tx_form_aggr(struct ath_softc *sc, struct ath_txq *txq,
 	}
 
 	*aggr_len = al;
-
+	*pchlen = counter;
 	return closed;
 #undef PADBYTES
 }
@@ -1454,24 +1455,28 @@ static void ath_tx_fill_desc(struct ath_softc *sc, struct ath_buf *bf,
 static void
 ath_tx_form_burst(struct ath_softc *sc, struct ath_txq *txq,
 		  struct ath_atx_tid *tid, struct list_head *bf_q,
-		  struct ath_buf *bf_first, struct sk_buff_head *tid_q,int *burst_len)
+		  struct ath_buf *bf_first, struct sk_buff_head *tid_q,int *burst_len,int *pchlen)
 {
 	struct ath_buf *bf = bf_first, *bf_prev = NULL;
 	struct sk_buff *skb;
 	int nframes = 0;
 	int len_sum = 0; //add by mengy
+	int counter = 0; //add by changhuapei
 	do {
 		struct ieee80211_tx_info *tx_info;
 		skb = bf->bf_mpdu;
 		// add by mengy for the tw timestamp
-		//struct timespec tw;
-		//getnstimeofday(&tw);
-		//skb->tstamp = timespec_to_ktime(tw);
+		struct timespec tw;
+		getnstimeofday(&tw);
+		skb->tstamp = timespec_to_ktime(tw);
 		// add end by mengy
 		
 		nframes++;
 		__skb_unlink(skb, tid_q);
 		list_add_tail(&bf->list, bf_q);
+
+		counter = counter + 1; //add by chpei
+
 		if (bf_prev)
 			bf_prev->bf_next = bf;
 		bf_prev = bf;
@@ -1492,6 +1497,7 @@ ath_tx_form_burst(struct ath_softc *sc, struct ath_txq *txq,
 		ath_set_rates(tid->an->vif, tid->an->sta, bf, false);
 	} while (1);
 	*burst_len = len_sum; //add by mengy
+	*pchlen = counter; //add by mengy
 }
 /* change for the burst and the ath_tx_txqaddbuf*/
 static bool ath_tx_sched_aggr(struct ath_softc *sc, struct ath_txq *txq,
@@ -1505,7 +1511,7 @@ static bool ath_tx_sched_aggr(struct ath_softc *sc, struct ath_txq *txq,
 	bool aggr, last = true;
 	int burst_len = 0; // add by mengy
 	int pkt_type = 0; //add by mengy
-	
+        int pchlen = 0; //add by chpei	
 	if (!ath_tid_has_buffered(tid))
 		return false;
 
@@ -1527,12 +1533,12 @@ static bool ath_tx_sched_aggr(struct ath_softc *sc, struct ath_txq *txq,
 	if (aggr)
 	{
 		last = ath_tx_form_aggr(sc, txq, tid, &bf_q, bf,
-					tid_q, &aggr_len);
+					tid_q, &aggr_len, &pchlen);
 		pkt_type = 1;// add by mengy
 	}
 	else
 	{
-		ath_tx_form_burst(sc, txq, tid, &bf_q, bf, tid_q,&burst_len);
+		ath_tx_form_burst(sc, txq, tid, &bf_q, bf, tid_q,&burst_len,&pchlen);
 		pkt_type = 2; // add by mengy
 	}
 	if (list_empty(&bf_q))
@@ -1548,9 +1554,9 @@ static bool ath_tx_sched_aggr(struct ath_softc *sc, struct ath_txq *txq,
 	
 	//printk(KERN_DEBUG "call recv in ath_tx_sched_aggr\n");
 	if(pkt_type == 1)
-		recv(aggr_len, sc, txq, bf_q, false);// add by mengy
+		recv(pchlen,aggr_len, sc, txq, bf_q, false);// add by mengy
 	else
-		recv(burst_len, sc, txq, bf_q, false);// add by mengy
+		recv(pchlen,burst_len, sc, txq, bf_q, false);// add by mengy
 	
 	return true;
 }
@@ -2174,11 +2180,11 @@ static void ath_tx_send_normal(struct ath_softc *sc, struct ath_txq *txq,
 	bf->bf_lastbf = bf;
 	ath_tx_fill_desc(sc, bf, txq, fi->framelen);
 	//add by mengy for the normal packet sent
-	//struct timespec tw;
-	//getnstimeofday(&tw);
-	//skb->tstamp = timespec_to_ktime(tw);
+	struct timespec tw;
+	getnstimeofday(&tw);
+	skb->tstamp = timespec_to_ktime(tw);
 	//printk(KERN_DEBUG "call recv in ath_tx_send_normal");
-	recv(fi->framelen, sc, txq, bf_head, false);
+	recv(1,fi->framelen, sc, txq, bf_head, false);
 	//add end by mengy
 	//ath_tx_txqaddbuf(sc, txq, &bf_head, false); // change for before
 	
