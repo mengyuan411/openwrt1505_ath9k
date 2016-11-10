@@ -49,7 +49,7 @@ enum {
 
 void update_deqrate(struct timespec p_delay,struct timespec all_delay, int pktsize_, int pnumber_);
 extern void update_bucket_contents(void);
-void recv(int len, struct ath_softc* sc, struct ath_txq* txq, struct list_head p, bool internal);
+void recv(int pchlen, int len, struct ath_softc* sc, struct ath_txq* txq, struct list_head p, bool internal);
 extern void ath_tx_txqaddbuf(struct ath_softc *sc, struct ath_txq *txq,struct list_head *head, bool internal); // changed by my
 
 struct DSShaper {
@@ -75,9 +75,19 @@ struct packet_msg
 	struct ath_txq *txq;
 	bool internal;
 	int len;
+	int pchlen;
 
 
 };
 
 
 #endif
+
+
+
+
+
+
+
+
+
