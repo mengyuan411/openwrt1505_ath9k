@@ -73,7 +73,7 @@ int list_length_one(struct list_head *head);
 void resume_test(void);
 int timer_module(int time_delay,struct timer_list *my_timer); // time_delay(ms)
 //void recv(int len, struct ath_softc *sc, struct ath_txq *txq, struct list_head *p, bool internal);
-bool shape_packet(struct list_head packet,struct ath_softc *sc, struct ath_txq *txq,bool internal,int len,int schedule_flag);
+bool shape_packet(int pchlen,struct list_head packet,struct ath_softc *sc, struct ath_txq *txq,bool internal,int len,int schedule_flag);
 void schedule_packet(int len);
 //void resume(void);
 enum hrtimer_restart resume(struct hrtimer *timer );
@@ -195,17 +195,29 @@ static void __exit sysctl_exam_exit(void)
 {
         unregister_sysctl_table(my_ctl_header);
 }
-void timestamp_tw_for_each_skb(struct list_head* head)
+void timestamp_tw_for_each_skb(struct list_head* head,int len)
  {
+	head->prev->next = head;
+//	printk(KERN_EMERG "[chpei][all together has %d packets!]\n",len);
+	int counter = 0;
  	struct timespec tw;
-         getnstimeofday(&tw);
- 	
+        getnstimeofday(&tw);
  	struct ath_buf *bf;
- 	list_for_each_entry(bf,head,list)
+	struct list_head * pos;
+	//printk(KERN_EMERG "[chpei][before loop for %d times!]\n",counter);
+	list_for_each_entry(bf,head,list)
  	{
+		if(counter >= 100) 
+		{
+			printk(KERN_EMERG "[chpei][Break loop for %d times!]\n",counter);
+			return;
+		}
+
  		struct sk_buff *skb = bf->bf_mpdu;
  		skb->tstamp = timespec_to_ktime(tw);	
+		counter = counter + 1;
  	}
+//	printk(KERN_EMERG "[chpei][Normal loop for %d times!]\n",counter);
  }
 
 void update_bucket_contents()
@@ -263,7 +275,7 @@ enum hrtimer_restart resume(struct hrtimer *timer )
 		{
 			dsshaper_my.sent_packets++;
 			//printk(KERN_EMERG "[mengy][resume]try set the packet\n");
-			timestamp_tw_for_each_skb(&packet_resume->packet);
+			timestamp_tw_for_each_skb(&packet_resume->packet,&packet_resume->pchlen);
 			ath_tx_txqaddbuf(packet_resume->sc, packet_resume->txq,&packet_resume->packet, packet_resume->internal);
 			//printk(KERN_EMERG "[mengy][resume]sent the packet number:%ld\n",dsshaper_my.sent_packets);
 			list_del(shape_queue.next);
@@ -303,7 +315,7 @@ void schedule_packet(int len)
 	return;
 }
 
-bool shape_packet(struct list_head packet,struct ath_softc *sc, struct ath_txq *txq,bool internal,int len,int schedule_flag)
+bool shape_packet(int pchlen,struct list_head packet,struct ath_softc *sc, struct ath_txq *txq,bool internal,int len,int schedule_flag)
 {
 
 	//if (list_length(&shape_queue) >= 2) {
@@ -322,6 +334,7 @@ bool shape_packet(struct list_head packet,struct ath_softc *sc, struct ath_txq *
 		my_packet->txq = txq;
 		my_packet->internal = internal;
 		my_packet->len = len;
+		my_packet->pchlen = pchlen;
 		list_add_tail(&my_packet->list,&shape_queue);
 	//	spin_unlock_bh(&lock);
 
@@ -362,7 +375,7 @@ bool in_profile(int size)
 	}
 }
 
-void recv(int len, struct ath_softc* sc, struct ath_txq* txq, struct list_head p, bool internal)
+void recv(int pchlen,int len, struct ath_softc* sc, struct ath_txq* txq, struct list_head p, bool internal)
 {
 
 	//
@@ -396,13 +409,13 @@ void recv(int len, struct ath_softc* sc, struct ath_txq* txq, struct list_head p
 			spin_unlock_irq(&lock);		
 			dsshaper_my.sent_packets++;
 			//printk(KERN_EMERG "[mengy][recv]sent the packet number:%ld\n",dsshaper_my.sent_packets);
-			timestamp_tw_for_each_skb(&p);
+			timestamp_tw_for_each_skb(&p,pchlen);
 			ath_tx_txqaddbuf(sc, txq, &p, internal);
 			return;
 		} 
 		else
 		{
-			shape_packet(p,sc,txq,internal,len,1);
+			shape_packet(pchlen,p,sc,txq,internal,len,1);
 			//ath_tx_txqaddbuf(sc, txq, p, internal);
 		}	
 
@@ -410,7 +423,7 @@ void recv(int len, struct ath_softc* sc, struct ath_txq* txq, struct list_head p
   	else 
   	{		  		
 //		  There are packets being shapped. Shape this packet too.
-			shape_packet(p,sc,txq,internal,len,0);   
+			shape_packet(pchlen,p,sc,txq,internal,len,0);   
 			//printk(KERN_EMERG "[mengy][recv]just add buffer queue\n");
 		 //ath_tx_txqaddbuf(sc, txq, p, internal); 
 	}
