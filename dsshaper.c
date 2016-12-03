@@ -40,7 +40,8 @@ int ntrans_ = 0;
 struct timespec delay_sum_ = {0};
 int pktsize_sum_ = 0;
 long throughput_sum_ = 0;
-
+int rounds = 0;
+int cycle = 0;
 struct timespec checktime_;
 int shape_flag = 0;
 int restart_times = 0;
@@ -57,6 +58,7 @@ int rate_avg_print = 0; //bits/s
 
 int fix_peak = 90000000; //bits/s
 long long flow_peak = 100000000; // bits/s
+long long pri_peak_ = 100000000; // bits/s
 int flow_peak_print = 100000000; // bits/s
 
 static int switchOn_ = 1;
@@ -65,7 +67,8 @@ int beta_ = 100000; //bits/s
 int burst_size_ = 80000;// bits
 int deltaIncrease_ = 1000000; //bits/s
 struct timespec checkThInterval_ = {1,0};
-struct timespec checkInterval_ = {0,5000000};
+struct timespec checkInterval_ = {0,50000000};
+int interval_ms = 50;
 struct timespec checkThtime_ = {0};
 
 //extern void recv(int len, struct ath_softc *sc, struct ath_txq *txq, struct list_head *p, bool internal);
@@ -98,6 +101,13 @@ static struct ctl_table my_sysctl_exam[] = {
         {
                 .procname       = "switchOn",
                 .data           = &switchOn_,
+                .maxlen         = sizeof(int),
+                .mode           = 0666,
+                .proc_handler   = &proc_dointvec,
+        },
+        {
+                .procname       = "cycle",
+                .data           = &cycle,
                 .maxlen         = sizeof(int),
                 .mode           = 0666,
                 .proc_handler   = &proc_dointvec,
@@ -140,6 +150,13 @@ static struct ctl_table my_sysctl_exam[] = {
         {
                 .procname       = "beta",
                 .data           = &beta_,
+                .maxlen         = sizeof(int),
+                .mode           = 0666,
+                .proc_handler   = &proc_dointvec,
+        },
+        {
+                .procname       = "interval_ms",
+                .data           = &interval_ms,
                 .maxlen         = sizeof(int),
                 .mode           = 0666,
                 .proc_handler   = &proc_dointvec,
@@ -263,6 +280,7 @@ enum hrtimer_restart resume(struct hrtimer *timer )
 	//printk(KERN_EMERG "[mengy][resume]resume after time:%ld.%ld\n",now.tv_sec,now.tv_nsec);
 	int resume_count = 0;
 	struct packet_msg *packet_resume;
+	struct ieee80211_hdr *hdr;
 	//struct packet_dsshaper *packet_dsshaper_resume;
 	//struct list_head *lh_packet_resume;
 	//struct list_head *lh_p_resume;
@@ -276,6 +294,15 @@ enum hrtimer_restart resume(struct hrtimer *timer )
 			dsshaper_my.sent_packets++;
 			//printk(KERN_EMERG "[mengy][resume]try set the packet\n");
 			timestamp_tw_for_each_skb(&packet_resume->packet,&packet_resume->pchlen);
+			
+			int flag = 0;
+			hdr = (struct ieee80211_hdr *)( list_entry(packet_resume->packet.next, struct ath_buf, list)->bf_mpdu);	
+			if(ieee80211_is_mgmt(hdr->frame_control) || ieee80211_is_ctl(hdr->frame_control))
+			{
+				printk(KERN_EMERG "[chpei][in resume]packet type=%d",(int)hdr->frame_control);
+				flag=1;
+			}
+			
 			ath_tx_txqaddbuf(packet_resume->sc, packet_resume->txq,&packet_resume->packet, packet_resume->internal);
 			//printk(KERN_EMERG "[mengy][resume]sent the packet number:%ld\n",dsshaper_my.sent_packets);
 			list_del(shape_queue.next);
@@ -355,12 +382,16 @@ bool in_profile(int size)
 
 	long packetsize = size * 8;
 
+	if(packetsize < 86*8){
+		printk(KERN_EMERG "[chpei][in_profile]mgmt:%d\n",size);
+		return true;
+	}
 	//printk(KERN_EMERG "[mengy][in_profile] packetsize:%ld,curr_bucket:%ld\n",packetsize,dsshaper_my.curr_bucket_contents);	
 	if(packetsize > dsshaper_my.burst_size_)
 	{
 		if(dsshaper_my.curr_bucket_contents == dsshaper_my.burst_size_)
 		{
-			dsshaper_my.curr_bucket_contents=0;
+			dsshaper_my.curr_bucket_contents-=packetsize;
 			return true;
 		}
 		else
@@ -378,6 +409,7 @@ bool in_profile(int size)
 void recv(int pchlen,int len, struct ath_softc* sc, struct ath_txq* txq, struct list_head p, bool internal)
 {
 
+	struct ieee80211_hdr *hdr;
 	//
 	if(init_flag == 0){
 		INIT_LIST_HEAD(&shape_queue);
@@ -410,6 +442,16 @@ void recv(int pchlen,int len, struct ath_softc* sc, struct ath_txq* txq, struct 
 			dsshaper_my.sent_packets++;
 			//printk(KERN_EMERG "[mengy][recv]sent the packet number:%ld\n",dsshaper_my.sent_packets);
 			timestamp_tw_for_each_skb(&p,pchlen);
+			
+			int flag = 0;
+			hdr = (struct ieee80211_hdr *)( list_entry(p.next, struct ath_buf, list)->bf_mpdu);	
+			if(ieee80211_is_mgmt(hdr->frame_control) || ieee80211_is_ctl(hdr->frame_control))
+			{
+				printk(KERN_EMERG "[chpei][in recv]packet type=%d",(int)hdr->frame_control);
+				flag=1;
+			}
+
+
 			ath_tx_txqaddbuf(sc, txq, &p, internal);
 			return;
 		} 
@@ -422,6 +464,17 @@ void recv(int pchlen,int len, struct ath_softc* sc, struct ath_txq* txq, struct 
   	} 
   	else 
   	{		  		
+		if ( len < 86) 
+	//	if(true)
+		{ 	
+			spin_unlock_irq(&lock);		
+			dsshaper_my.sent_packets++;
+			printk(KERN_EMERG "[chpei][recv]mgmt:%d\n",len);
+			timestamp_tw_for_each_skb(&p,pchlen);
+			ath_tx_txqaddbuf(sc, txq, &p, internal);
+			return;
+		}
+ 
 //		  There are packets being shapped. Shape this packet too.
 			shape_packet(pchlen,p,sc,txq,internal,len,0);   
 			//printk(KERN_EMERG "[mengy][recv]just add buffer queue\n");
@@ -453,9 +506,9 @@ void update_deqrate(struct timespec p_delay,struct timespec all_delay, int pktsi
 		}
 	}	
 	
+	
 
-
-	long long pri_peak_ = flow_peak;
+	//long long pri_peak_ = flow_peak;
 	//printk(KERN_DEBUG "pdelay:%ld.%ld,pktsize_:%ld,pnumber_:%ld,ntrans_:%ld\n",p_delay.tv_sec,p_delay.tv_nsec,pktsize_,pnumber_,ntrans_);	
 	ntrans_ = ntrans_ + pnumber_;
 	//printk(KERN_DEBUG "pdelay:%ld.%ld,pktsize_:%ld,pnumber_:%ld,ntrans_:%ld,delay_sum:%d.%d\n",p_delay.tv_sec,p_delay.tv_nsec,pktsize_,pnumber_,ntrans_,delay_sum_.tv_sec,delay_sum_.tv_nsec);
@@ -463,7 +516,8 @@ void update_deqrate(struct timespec p_delay,struct timespec all_delay, int pktsi
 	delay_sum_ = timespec_add(delay_sum_,p_delay);
 	//printk(KERN_DEBUG "pdelay:%ld.%ld,pktsize_:%ld,pnumber_:%ld,ntrans_:%ld,delay_sum:%d.%d\n",p_delay.tv_sec,p_delay.tv_nsec,pktsize_,pnumber_,ntrans_,delay_sum_.tv_sec,delay_sum_.tv_nsec);
 	pktsize_sum_ += pktsize_*8;
-
+	
+	checkInterval_.tv_nsec = (long)interval_ms*1000000;
 	struct timespec tmp_sub = timespec_sub(now_, checktime_); // unsettled checktime_
 	if( timespec_compare(&tmp_sub,&checkInterval_) >0 ){
 		//printk(KERN_DEBUG "pdelay:%ld.%ld,pktsize_:%ld,pnumber_:%ld,ntrans_:%ld,delay_sum:%ld.%ld\n",p_delay.tv_sec,p_delay.tv_nsec,pktsize_,pnumber_,ntrans_,delay_sum_.tv_sec,delay_sum_.tv_nsec);
@@ -482,23 +536,37 @@ void update_deqrate(struct timespec p_delay,struct timespec all_delay, int pktsi
 		rate_avg_print = (int)rate_avg_;
 		if (switchOn_)
 		{
-			if( delay_avg_ > delay_optimal_ )// delay_optimal must be in microseconds, ie, us
+			if(rounds % cycle == 1){
+				
+				rounds = (rounds+1)%cycle;
+
+				if( delay_avg_ > delay_optimal_ )// delay_optimal must be in microseconds, ie, us
+				{
+					update_bucket_contents();
+					flow_peak = div64_s64(delay_optimal_ * pri_peak_,(long long)delay_avg_); //bits/us
+					if (flow_peak  < beta_)
+						flow_peak = beta_;
+				}else{
+					update_bucket_contents();
+					flow_peak =  pri_peak_ + deltaIncrease_;
+					if (flow_peak  > fix_peak)
+						flow_peak = fix_peak;
+				}
+				flow_peak_print = (int)flow_peak;
+				pri_peak_ = flow_peak;
+
+			}else if(rounds % cycle ==0 )
 			{
 				update_bucket_contents();
-				flow_peak = div64_s64(delay_optimal_ * pri_peak_,(long long)delay_avg_); //bits/us
-				flow_peak_print = (int)flow_peak;
-				if (flow_peak  < beta_)
-					flow_peak = beta_;
+				flow_peak = fix_peak; //fixed rate 
+				rounds = (rounds+1)%cycle;
 			}else{
-				update_bucket_contents();
-				flow_peak =  pri_peak_ + deltaIncrease_;
-				flow_peak_print = (int)flow_peak;
-				if (flow_peak  > fix_peak)
-					flow_peak = fix_peak;
-			}
+				rounds = (rounds+1)%cycle;
+			}	
 		}else{
 			update_bucket_contents();
 			flow_peak = fix_peak; //fixed rate 
+			flow_peak_print = (int)flow_peak;
 		}
 		ntrans_ = 0;
 		pktsize_sum_ = 0;
